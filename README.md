@@ -1,13 +1,12 @@
-# DDEX DSP
+# Stardust DSP
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Vue 3](https://img.shields.io/badge/Vue-3.x-brightgreen.svg)](https://vuejs.org/)
 [![Firebase](https://img.shields.io/badge/Firebase-Powered-orange.svg)](https://firebase.google.com/)
 
-**Launch a DDEX-compliant streaming platform in minutes.** DDEX DSP is an open-source, npm-installable Digital Service Provider that receives DDEX ERN deliveries, processes them into a searchable catalog, and provides a complete music streaming experience.
+**Launch a DDEX-compliant streaming platform in minutes.** Stardust DSP is an open-source, npm-installable Digital Service Provider that receives DDEX ERN deliveries, processes them into a searchable catalog, and provides a complete music streaming experience.
 
-🌐 **Official Platform**: [https://ddex-dsp.org](https://ddex-dsp.org)  
-📚 **Documentation**: [https://docs.ddex-dsp.org](https://docs.ddex-dsp.org)
+🌐 **Official URL**: [https://stardust-dsp.org](https://stardust-dsp.org)
 
 ## ✨ Features
 
@@ -18,7 +17,7 @@
 - **Complete Catalog** - Auto-enriched music catalog with search, browse, and recommendations
 - **DSR Reporting** - Automated Digital Sales Reporting with usage tracking and royalty calculations
 - **White-Label Ready** - Fully customizable UI, branding, and features for any market
-- **Test Environment** - Perfect for labels to test their DDEX Distro deployments
+- **Test Environment** - Perfect for labels to test their Stardust Distro deployments
 
 ### 🎯 Platform Features
 
@@ -35,10 +34,10 @@
 
 ```bash
 # Install the CLI globally
-npm install -g @ddex/dsp-cli
+npm install -g @stardust-dsp/dsp-cli
 
 # Create your streaming platform
-npx create-ddex-dsp my-streaming-service
+npx create-stardust-dsp my-streaming-service
 
 # Navigate to your project
 cd my-streaming-service
@@ -53,7 +52,7 @@ Your streaming platform will be live at `https://my-streaming-service.app` 🎉
 
 ```bash
 # Clone the repository
-git clone https://github.com/ddex-ecosystem/ddex-dsp.git
+git clone https://github.com/daddykev/stardust-dsp.git
 cd ddex-dsp
 
 # Install dependencies
@@ -83,7 +82,7 @@ npm run build
 ## 📦 Project Structure
 
 ```
-ddex-dsp/
+stardust-dsp/
 ├── src/
 │   ├── components/        # Reusable UI components
 │   ├── views/             # Page components
@@ -141,21 +140,21 @@ Configure DDEX delivery endpoints in `firebase.json`:
 
 ## 🔄 Integration with DDEX Ecosystem
 
-DDEX DSP works seamlessly with:
+Stardust DSP works seamlessly with:
 
-- **[DDEX Distro](https://github.com/ddex-ecosystem/ddex-distro)** - Send test deliveries from your distribution platform
-- **[DDEX Workbench](https://github.com/ddex-ecosystem/ddex-workbench)** - Automatic ERN validation during ingestion
+- **[Stardust Distro](https://github.com/daddykev/stardust-distro)** - Send test deliveries from your distribution platform
+- **[DDEX Workbench](https://github.com/daddykev/ddex-workbench)** - Automatic ERN validation during ingestion
 
 ### Testing Deliveries
 
 ```bash
-# Send a test delivery from DDEX Distro
-ddex-distro deliver \
+# Send a test delivery from Stardust Distro
+stardust-distro deliver \
   --target=http://localhost:5001/api/deliveries \
   --release=test-album
 
 # Check ingestion status
-ddex-dsp deliveries list
+stardust-dsp deliveries list
 ```
 
 ## 📊 Performance Targets
@@ -243,17 +242,16 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🆘 Support
 
-- **Documentation**: [https://docs.ddex-dsp.org](https://docs.ddex-dsp.org)
-- **Issues**: [GitHub Issues](https://github.com/ddex-ecosystem/ddex-dsp/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/ddex-ecosystem/ddex-dsp/discussions)
+- **Documentation**: [https://docs.ddex-dsp.org](https://docs.stardust-dsp.org)
+- **Issues**: [GitHub Issues](https://github.com/daddykev/stardust-dsp/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/daddykev/stardust-dsp/discussions)
 - **Email**: support@ddex-dsp.org
 
 ## 🙏 Acknowledgments
 
-- Part of the [DDEX Ecosystem](https://github.com/ddex-ecosystem)
 - Built with [Vue.js](https://vuejs.org/) and [Firebase](https://firebase.google.com/)
 - DDEX standards by [DDEX Limited](https://ddex.net/)
 
 ---
 
-**Ready to launch your streaming platform?** Get started in minutes with `npx create-ddex-dsp` 🚀
+**Ready to launch your streaming platform?** Get started in minutes with `npx create-stardust-dsp` 🚀
