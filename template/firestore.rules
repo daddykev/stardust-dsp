@@ -1,18 +1,109 @@
-rules_version='2'
-
+rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      // This rule allows anyone with your database reference to view, edit,
-      // and delete all data in your database. It is useful for getting
-      // started, but it is configured to expire after 30 days because it
-      // leaves your app open to attackers. At that time, all client
-      // requests to your database will be denied.
-      //
-      // Make sure to write security rules for your app before that time, or
-      // else all client requests to your database will be denied until you
-      // update your rules.
-      allow read, write: if request.time < timestamp.date(2025, 9, 5);
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    function isIndustryUser() {
+      return isAuthenticated() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['label', 'distributor', 'admin'];
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // Public collections (read-only for all)
+    match /releases/{releaseId} {
+      allow read: if true;
+      allow write: if isIndustryUser();
+    }
+    
+    match /tracks/{trackId} {
+      allow read: if true;
+      allow write: if isIndustryUser();
+    }
+    
+    match /artists/{artistId} {
+      allow read: if true;
+      allow write: if isIndustryUser();
+    }
+    
+    match /albums/{albumId} {
+      allow read: if true;
+      allow write: if isIndustryUser();
+    }
+    
+    // User collections
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) && 
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'createdAt']);
+      allow delete: if false;
+    }
+    
+    match /playlists/{playlistId} {
+      allow read: if resource.data.public == true || 
+        isOwner(resource.data.userId) || 
+        request.auth.uid in resource.data.collaborators;
+      allow create: if isAuthenticated();
+      allow update: if isOwner(resource.data.userId) || 
+        request.auth.uid in resource.data.collaborators;
+      allow delete: if isOwner(resource.data.userId);
+    }
+    
+    match /favorites/{userId} {
+      allow read, write: if isOwner(userId);
+    }
+    
+    match /history/{userId} {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId);
+    }
+    
+    // Analytics collections
+    match /plays/{playId} {
+      allow read: if isAdmin() || isIndustryUser();
+      allow create: if isAuthenticated();
+      allow update: if false;
+      allow delete: if false;
+    }
+    
+    match /sessions/{sessionId} {
+      allow read: if isAdmin();
+      allow write: if isAuthenticated();
+    }
+    
+    // Industry collections
+    match /deliveries/{deliveryId} {
+      allow read: if isIndustryUser() || isAdmin();
+      allow create: if isIndustryUser();
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+    
+    match /reports/{reportId} {
+      allow read: if isIndustryUser() || isAdmin();
+      allow write: if isAdmin();
+    }
+    
+    // System collections
+    match /config/{configId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    
+    match /cache/{cacheId} {
+      allow read: if true;
+      allow write: if false;
     }
   }
 }
