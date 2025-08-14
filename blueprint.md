@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Stardust DSP is an open-source, npm-installable Digital Service Provider (streaming platform) that receives DDEX ERN deliveries, processes them into a searchable catalog, and provides a complete music streaming experience. Part of the Stardust ecosystem alongside DDEX Workbench and Stardust Distro.
+Stardust DSP is an open-source, npm-installable Digital Service Provider (streaming platform) that receives DDEX ERN deliveries, processes them into a searchable catalog, and provides a complete music streaming experience. Part of the Stardust Ecosystem alongside DDEX Workbench and Stardust Distro.
 
 ### Vision
 Enable anyone to launch a DDEX-compliant streaming service in minutes, from testing environments for labels to fully-featured platforms for emerging markets.
@@ -11,7 +11,7 @@ Enable anyone to launch a DDEX-compliant streaming service in minutes, from test
 - **Instant Streaming Platform**: Deploy a functional DSP with one command
 - **DDEX-Native Ingestion**: Built to receive and process ERN deliveries seamlessly
 - **Complete Streaming Stack**: Catalog, search, playback, and user management included
-- **Test Environment Ready**: Perfect for labels to test their DDEX Distro deployments
+- **Test Environment Ready**: Perfect for labels to test their Stardust Distro deployments
 - **White-Label Capable**: Fully customizable for any brand or market
 
 ### Official App Build
@@ -31,7 +31,7 @@ Enable anyone to launch a DDEX-compliant streaming service in minutes, from test
 ### Deployment Model
 ```bash
 # One-command deployment
-npx create-ddex-dsp my-streaming-service
+npx create-stardust-dsp my-streaming-service
 cd my-streaming-service
 npm run deploy
 ```
@@ -44,11 +44,11 @@ npm run deploy
 
 ## Unified Authentication Strategy
 
-DDEX DSP integrates with the ecosystem authentication while maintaining its own user base:
+Stardust DSP integrates with the ecosystem authentication while maintaining its own user base:
 
 ```javascript
 // Dual authentication model
-import { initializeAuth } from '@stardust/auth';
+import { initializeAuth } from '@stardust-ecosystem/auth';
 
 // Industry auth (for deliveries/testing)
 const industryAuth = initializeAuth({
@@ -63,7 +63,7 @@ const consumerAuth = initializeAuth({
 });
 
 // Enables:
-// - Labels to test deliveries from DDEX Distro
+// - Labels to test deliveries from Stardust Distro
 // - Separate consumer accounts for streaming
 // - Analytics across the ecosystem
 ```
@@ -91,20 +91,20 @@ stardust-dsp/
 │   │   └── test/                 # Test environment
 │   └── package.json
 ├── packages/                     # Core packages
-│   ├── @ddex/dsp-core/           # Core DSP logic
+│   ├── @stardust-dsp/dsp-core/   # Core DSP logic
 │   │   ├── src/
 │   │   │   ├── ingestion/        # ERN processing
 │   │   │   ├── catalog/          # Catalog management
 │   │   │   ├── streaming/        # Playback engine
 │   │   │   └── reporting/        # DSR generation
 │   │   └── package.json
-│   ├── @ddex/player/             # Audio player
+│   ├── @stardust-dsp/player/     # Audio player
 │   │   ├── src/
 │   │   │   ├── components/       # Player UI
 │   │   │   ├── engine/           # Playback logic
 │   │   │   └── drm/              # Rights management
 │   │   └── package.json
-│   └── @ddex/storefront/         # Public UI components
+│   └── @stardust-dsp/storefront/ # Public UI components
 │       ├── src/
 │       │   ├── browse/           # Browse components
 │       │   ├── search/           # Search interface
@@ -363,7 +363,7 @@ class StreamingService {
 ```javascript
 // Progressive Web App with offline support
 const offlineCache = {
-  name: 'ddex-dsp-offline-v1',
+  name: 'stardust-dsp-offline-v1',
   urls: [
     '/',
     '/player',
@@ -826,17 +826,17 @@ GET  /api/admin/analytics/usage
 ### Installation & Setup
 ```bash
 # Global installation
-npm install -g @ddex/dsp-cli
+npm install -g @stardust-dsp/dsp-cli
 
 # Create new DSP
-ddex-dsp create my-music-service \
+stardust-dsp create my-music-service \
   --template=streaming \
   --search=algolia \
   --cdn=cloudflare
 
 # Interactive setup
 cd my-music-service
-ddex-dsp init
+stardust-dsp init
 # Prompts for:
 # - Firebase project
 # - Domain configuration
@@ -847,25 +847,25 @@ ddex-dsp init
 ### CLI Commands
 ```bash
 # Project management
-ddex-dsp create <name>       # Create new DSP
-ddex-dsp init                # Initialize services
-ddex-dsp deploy              # Deploy platform
-ddex-dsp update              # Update framework
+stardust-dsp create <name>       # Create new DSP
+stardust-dsp init                # Initialize services
+stardust-dsp deploy              # Deploy platform
+stardust-dsp update              # Update framework
 
 # Configuration
-ddex-dsp config ingestion    # Configure delivery reception
-ddex-dsp config streaming    # Setup CDN/transcoding
-ddex-dsp config search       # Configure search service
+stardust-dsp config ingestion    # Configure delivery reception
+stardust-dsp config streaming    # Setup CDN/transcoding
+stardust-dsp config search       # Configure search service
 
 # Development
-ddex-dsp dev                 # Start local server
-ddex-dsp emulators           # Firebase emulators
-ddex-dsp seed                # Load demo content
+stardust-dsp dev                 # Start local server
+stardust-dsp emulators           # Firebase emulators
+stardust-dsp seed                # Load demo content
 
 # Operations
-ddex-dsp deliveries list     # List recent deliveries
-ddex-dsp deliveries process  # Manually process delivery
-ddex-dsp reports generate    # Generate DSR
+stardust-dsp deliveries list     # List recent deliveries
+stardust-dsp deliveries process  # Manually process delivery
+stardust-dsp reports generate    # Generate DSR
 ```
 
 ## Security Architecture
