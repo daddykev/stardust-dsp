@@ -27,12 +27,10 @@ const navigationItems = computed(() => {
   return [
     { name: 'Dashboard', path: '/dashboard', icon: 'chart-bar' },
     { name: 'Catalog', path: '/catalog', icon: 'music' },
-    { name: 'New Release', path: '/releases/new', icon: 'plus' },
-    { name: 'Deliveries', path: '/deliveries', icon: 'truck' },
-    { name: 'Analytics', path: '/analytics', icon: 'chart-line' },
-    { name: 'Settings', path: '/settings', icon: 'cog' },
     { name: 'Ingestion', path: '/ingestion', icon: 'inbox' },
-    { name: 'Distributors', path: '/distributors', icon: 'truck' },
+    { name: 'Distributors', path: '/distributors', icon: 'building' }, // Changed icon to differentiate
+    { name: 'Analytics', path: '/analytics', icon: 'chart-line' },
+    { name: 'Settings', path: '/settings', icon: 'cog' }
   ]
 })
 
@@ -65,9 +63,8 @@ const toggleMobileMenu = () => {
 }
 
 const isActiveRoute = (path) => {
-  if (path === '/catalog' && route.path.startsWith('/catalog')) return true
-  if (path === '/releases/new' && route.path.startsWith('/releases')) return true
-  if (path === '/deliveries' && route.path.startsWith('/deliveries')) return true
+  // Simplified since we removed the complex routing
+  if (path === '/ingestion' && route.path.startsWith('/ingestion')) return true
   return route.path === path
 }
 </script>
