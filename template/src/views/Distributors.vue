@@ -32,6 +32,7 @@ const testFile = ref(null)
 const testResults = ref(null)
 const recentDeliveries = ref([])
 const activeTab = ref('config')
+const showApiKey = ref(false)
 
 // Form data
 const formData = ref({
@@ -40,6 +41,11 @@ const formData = ref({
   type: '',
   contactEmail: '',
   technicalContact: '',
+  // DDEX Fields
+  partyName: '',
+  partyId: '',
+  ernVersion: '4.3',
+  // Delivery settings
   deliveryProtocol: 'storage',
   apiKey: '',
   autoProcess: true,
@@ -72,7 +78,8 @@ const filteredDistributors = computed(() => {
   return distributors.value.filter(d => 
     d.name.toLowerCase().includes(query) ||
     d.id.toLowerCase().includes(query) ||
-    d.contactEmail?.toLowerCase().includes(query)
+    d.contactEmail?.toLowerCase().includes(query) ||
+    d.partyName?.toLowerCase().includes(query)
   )
 })
 
@@ -108,12 +115,13 @@ async function saveDistributor() {
       updatedAt: serverTimestamp()
     }
     
+    // Generate API key if switching to API protocol and no key exists
+    if (formData.value.deliveryProtocol === 'api' && !formData.value.apiKey) {
+      distributorData.apiKey = generateApiKey()
+    }
+    
     if (!editingDistributor.value) {
-      // Generate API key for new distributor if using API
-      if (formData.value.deliveryProtocol === 'api') {
-        distributorData.apiKey = generateApiKey()
-      }
-      
+      // New distributor
       distributorData.createdAt = serverTimestamp()
       distributorData.stats = {
         totalDeliveries: 0,
@@ -165,6 +173,7 @@ async function viewIntegration(distributor) {
   selectedDistributor.value = distributor
   showIntegrationModal.value = true
   activeTab.value = 'config'
+  showApiKey.value = false
   
   // Load recent deliveries for this distributor
   try {
@@ -198,7 +207,7 @@ function generateApiKey() {
 
 // Regenerate API key
 async function regenerateApiKey() {
-  if (!confirm('Are you sure you want to regenerate the API key? The old key will stop working.')) {
+  if (formData.value.apiKey && !confirm('Are you sure you want to regenerate the API key? The old key will stop working.')) {
     return
   }
   
@@ -212,7 +221,15 @@ function copyConfig() {
     : `Endpoint: POST https://us-central1-stardust-dsp.cloudfunctions.net/receiveDelivery\nAuthorization: Bearer ${selectedDistributor.value.apiKey}`
   
   navigator.clipboard.writeText(config)
-  // Could add a toast notification here
+  alert('Configuration copied to clipboard!')
+}
+
+// Copy API Key
+function copyApiKey() {
+  if (selectedDistributor.value?.apiKey) {
+    navigator.clipboard.writeText(selectedDistributor.value.apiKey)
+    alert('API Key copied to clipboard!')
+  }
 }
 
 // Copy Stardust Distro config
@@ -221,6 +238,10 @@ function copyDistroConfig() {
     name: "Stardust DSP",
     type: "DSP",
     protocol: selectedDistributor.value.deliveryProtocol === 'storage' ? 'storage' : 'API',
+    // Add DDEX info
+    partyName: selectedDistributor.value.partyName,
+    partyId: selectedDistributor.value.partyId,
+    ernVersion: selectedDistributor.value.ernVersion || '4.3',
     config: {
       distributorId: selectedDistributor.value.id,
       apiKey: selectedDistributor.value.apiKey || undefined
@@ -234,9 +255,8 @@ function copyDistroConfig() {
     config.config.endpoint = "https://us-central1-stardust-dsp.cloudfunctions.net/receiveDelivery"
   }
   
-  // Only include requirements if needed
   config.requirements = {
-    ernVersion: "4.3",
+    ernVersion: selectedDistributor.value.ernVersion || "4.3",
     audioFormat: ["WAV", "FLAC", "MP3"],
     imageSpecs: [
       {
@@ -254,23 +274,20 @@ function copyDistroConfig() {
   }
   
   navigator.clipboard.writeText(JSON.stringify(config, null, 2))
-  
-  // Show a toast notification
   alert('Configuration copied to clipboard! Paste this in Stardust Distro when adding a delivery target.')
 }
 
 // Download sample ERN
 function downloadSampleERN() {
-  // Create a sample ERN XML
   const sampleERN = `<?xml version="1.0" encoding="UTF-8"?>
 <ern:NewReleaseMessage xmlns:ern="http://ddex.net/xml/ern/43">
   <MessageHeader>
     <MessageId>TEST_${Date.now()}</MessageId>
     <MessageCreatedDateTime>${new Date().toISOString()}</MessageCreatedDateTime>
     <MessageSender>
-      <PartyId>${selectedDistributor.value.id}</PartyId>
+      <PartyId>${selectedDistributor.value.partyId || 'PADPIDA2025TEST001'}</PartyId>
       <PartyName>
-        <FullName>${selectedDistributor.value.name}</FullName>
+        <FullName>${selectedDistributor.value.partyName || selectedDistributor.value.name}</FullName>
       </PartyName>
     </MessageSender>
   </MessageHeader>
@@ -318,7 +335,6 @@ async function uploadTestFile() {
   testResults.value = []
   
   try {
-    // Step 1: Upload file
     testResults.value.push({
       step: 'upload',
       success: true,
@@ -331,14 +347,12 @@ async function uploadTestFile() {
     
     await uploadBytes(ref, testFile.value)
     
-    // Step 2: Wait for processing
     testResults.value.push({
       step: 'processing',
       success: true,
       message: 'Delivery received and queued for processing'
     })
     
-    // Step 3: Check validation (in real app, would poll for results)
     setTimeout(() => {
       testResults.value.push({
         step: 'validation',
@@ -372,6 +386,9 @@ function closeModal() {
     type: '',
     contactEmail: '',
     technicalContact: '',
+    partyName: '',
+    partyId: '',
+    ernVersion: '4.3',
     deliveryProtocol: 'storage',
     apiKey: '',
     autoProcess: true,
@@ -494,6 +511,10 @@ onMounted(() => {
                 <div class="distributor-info">
                   <h3>{{ distributor.name }}</h3>
                   <code class="distributor-id">{{ distributor.id }}</code>
+                  <div v-if="distributor.partyId" class="ddex-info">
+                    <span class="ddex-label">DPID:</span>
+                    <code class="ddex-value">{{ distributor.partyId }}</code>
+                  </div>
                 </div>
                 <div class="distributor-status">
                   <span class="status-badge" :class="distributor.active ? 'active' : 'inactive'">
@@ -579,139 +600,189 @@ onMounted(() => {
             </div>
             
             <form @submit.prevent="saveDistributor" class="modal-body">
-              <div class="form-group">
-                <label class="form-label required">Distributor Name</label>
-                <input 
-                  v-model="formData.name" 
-                  type="text" 
-                  class="form-input"
-                  placeholder="e.g., Universal Music Group"
-                  required
-                />
+              <!-- Basic Information -->
+              <div class="form-section">
+                <h4>Basic Information</h4>
+                
+                <div class="form-group">
+                  <label class="form-label required">Distributor Name</label>
+                  <input 
+                    v-model="formData.name" 
+                    type="text" 
+                    class="form-input"
+                    placeholder="e.g., Universal Music Group"
+                    required
+                  />
+                </div>
+                
+                <div class="form-group">
+                  <label class="form-label required">Distributor ID</label>
+                  <input 
+                    v-model="formData.id" 
+                    type="text" 
+                    class="form-input"
+                    placeholder="e.g., UMG_DIST_001"
+                    pattern="[A-Z0-9_]+"
+                    :disabled="editingDistributor"
+                    required
+                  />
+                  <small>Uppercase letters, numbers, and underscores only</small>
+                </div>
+                
+                <div class="form-group">
+                  <label class="form-label required">Type</label>
+                  <select v-model="formData.type" class="form-select" required>
+                    <option value="">Select Type</option>
+                    <option value="major_label">Major Label</option>
+                    <option value="indie_label">Independent Label</option>
+                    <option value="aggregator">Aggregator</option>
+                    <option value="artist_direct">Artist Direct</option>
+                    <option value="test">Test Account</option>
+                  </select>
+                </div>
+                
+                <div class="form-group">
+                  <label class="form-label required">Contact Email</label>
+                  <input 
+                    v-model="formData.contactEmail" 
+                    type="email" 
+                    class="form-input"
+                    placeholder="technical@distributor.com"
+                    required
+                  />
+                </div>
+                
+                <div class="form-group">
+                  <label class="form-label">Technical Contact</label>
+                  <input 
+                    v-model="formData.technicalContact" 
+                    type="text" 
+                    class="form-input"
+                    placeholder="Name and phone/email"
+                  />
+                </div>
               </div>
               
-              <div class="form-group">
-                <label class="form-label required">Distributor ID</label>
-                <input 
-                  v-model="formData.id" 
-                  type="text" 
-                  class="form-input"
-                  placeholder="e.g., UMG_DIST_001"
-                  pattern="[A-Z0-9_]+"
-                  :disabled="editingDistributor"
-                  required
-                />
-                <small>Uppercase letters, numbers, and underscores only</small>
+              <!-- DDEX Configuration -->
+              <div class="form-section">
+                <h4>DDEX Configuration</h4>
+                
+                <div class="form-group">
+                  <label class="form-label required">DDEX Party Name</label>
+                  <input 
+                    v-model="formData.partyName" 
+                    type="text" 
+                    class="form-input"
+                    placeholder="e.g., Universal Music Group"
+                    required
+                  />
+                  <small>Official company name as registered with DDEX</small>
+                </div>
+                
+                <div class="form-group">
+                  <label class="form-label required">DDEX Party ID (DPID)</label>
+                  <input 
+                    v-model="formData.partyId" 
+                    type="text" 
+                    class="form-input"
+                    placeholder="e.g., PADPIDA2014120301U"
+                    pattern="[A-Z0-9]+"
+                    required
+                  />
+                  <small>DPID format: PADPIDA + date + unique identifier</small>
+                </div>
+                
+                <div class="form-group">
+                  <label class="form-label">ERN Version</label>
+                  <select v-model="formData.ernVersion" class="form-select">
+                    <option value="4.3">ERN 4.3 (Latest)</option>
+                    <option value="4.2">ERN 4.2</option>
+                    <option value="4.1">ERN 4.1</option>
+                    <option value="3.8.2">ERN 3.8.2</option>
+                  </select>
+                </div>
               </div>
               
-              <div class="form-group">
-                <label class="form-label required">Type</label>
-                <select v-model="formData.type" class="form-select" required>
-                  <option value="">Select Type</option>
-                  <option value="major_label">Major Label</option>
-                  <option value="indie_label">Independent Label</option>
-                  <option value="aggregator">Aggregator</option>
-                  <option value="artist_direct">Artist Direct</option>
-                  <option value="test">Test Account</option>
-                </select>
-              </div>
-              
-              <div class="form-group">
-                <label class="form-label required">Contact Email</label>
-                <input 
-                  v-model="formData.contactEmail" 
-                  type="email" 
-                  class="form-input"
-                  placeholder="technical@distributor.com"
-                  required
-                />
-              </div>
-              
-              <div class="form-group">
-                <label class="form-label">Technical Contact</label>
-                <input 
-                  v-model="formData.technicalContact" 
-                  type="text" 
-                  class="form-input"
-                  placeholder="Name and phone/email"
-                />
-              </div>
-              
-              <div class="form-group">
-                <label class="form-label required">Delivery Protocol</label>
-                <select v-model="formData.deliveryProtocol" class="form-select" required>
-                  <option value="">Select Protocol</option>
-                  <option value="storage">Cloud Storage (Recommended)</option>
-                  <option value="ftp">FTP</option>
-                  <option value="sftp">SFTP</option>
-                  <option value="s3">Amazon S3</option>
-                  <option value="api">REST API</option>
-                </select>
-              </div>
-              
-              <!-- Protocol-specific settings -->
-              <div v-if="formData.deliveryProtocol === 'storage'" class="protocol-settings">
-                <div class="info-box">
-                  <font-awesome-icon icon="info-circle" />
-                  <div>
-                    <strong>Cloud Storage Delivery</strong>
-                    <p>Upload packages to the designated folder in Firebase Storage</p>
+              <!-- Delivery Configuration -->
+              <div class="form-section">
+                <h4>Delivery Configuration</h4>
+                
+                <div class="form-group">
+                  <label class="form-label required">Delivery Protocol</label>
+                  <select v-model="formData.deliveryProtocol" class="form-select" required>
+                    <option value="">Select Protocol</option>
+                    <option value="storage">Cloud Storage (Recommended)</option>
+                    <option value="api">REST API</option>
+                    <option value="ftp">FTP</option>
+                    <option value="sftp">SFTP</option>
+                    <option value="s3">Amazon S3</option>
+                  </select>
+                </div>
+                
+                <!-- Protocol-specific settings -->
+                <div v-if="formData.deliveryProtocol === 'storage'" class="protocol-settings">
+                  <div class="info-box">
+                    <font-awesome-icon icon="info-circle" />
+                    <div>
+                      <strong>Cloud Storage Delivery</strong>
+                      <p>Upload packages to the designated folder in Firebase Storage</p>
+                    </div>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Upload Path</label>
+                    <code class="path-display">
+                      /deliveries/{{ formData.id || '{DISTRIBUTOR_ID}' }}/{timestamp}/manifest.xml
+                    </code>
                   </div>
                 </div>
-                <div class="form-group">
-                  <label class="form-label">Upload Path</label>
-                  <code class="path-display">
-                    /deliveries/{{ formData.id || '{DISTRIBUTOR_ID}' }}/{timestamp}/manifest.xml
-                  </code>
+                
+                <div v-if="formData.deliveryProtocol === 'api'" class="protocol-settings">
+                  <div class="form-group">
+                    <label class="form-label">API Endpoint</label>
+                    <code class="path-display">
+                      POST https://us-central1-stardust-dsp.cloudfunctions.net/receiveDelivery
+                    </code>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">API Key</label>
+                    <div class="api-key-group">
+                      <input 
+                        v-model="formData.apiKey" 
+                        :placeholder="formData.apiKey ? 'API Key configured' : 'Click Generate to create key'" 
+                        type="text" 
+                        class="form-input"
+                        readonly
+                      />
+                      <button 
+                        @click="regenerateApiKey" 
+                        type="button"
+                        class="btn btn-secondary btn-sm"
+                      >
+                        {{ formData.apiKey ? 'Regenerate' : 'Generate' }}
+                      </button>
+                    </div>
+                  </div>
                 </div>
-              </div>
-              
-              <div v-if="formData.deliveryProtocol === 'api'" class="protocol-settings">
+                
                 <div class="form-group">
-                  <label class="form-label">API Endpoint</label>
-                  <code class="path-display">
-                    POST https://us-central1-stardust-dsp.cloudfunctions.net/receiveDelivery
-                  </code>
-                </div>
-                <div class="form-group">
-                  <label class="form-label">API Key</label>
-                  <div class="api-key-group">
+                  <label class="form-checkbox">
                     <input 
-                      :value="formData.apiKey || 'Will be generated upon save'" 
-                      type="text" 
-                      class="form-input"
-                      readonly
+                      v-model="formData.autoProcess" 
+                      type="checkbox"
                     />
-                    <button 
-                      v-if="formData.apiKey" 
-                      @click="regenerateApiKey" 
-                      type="button"
-                      class="btn btn-secondary btn-sm"
-                    >
-                      Regenerate
-                    </button>
-                  </div>
+                    <span>Automatically process deliveries upon receipt</span>
+                  </label>
                 </div>
-              </div>
-              
-              <div class="form-group">
-                <label class="form-checkbox">
-                  <input 
-                    v-model="formData.autoProcess" 
-                    type="checkbox"
-                  />
-                  <span>Automatically process deliveries upon receipt</span>
-                </label>
-              </div>
-              
-              <div class="form-group">
-                <label class="form-checkbox">
-                  <input 
-                    v-model="formData.sendAcknowledgments" 
-                    type="checkbox"
-                  />
-                  <span>Send acknowledgments after processing</span>
-                </label>
+                
+                <div class="form-group">
+                  <label class="form-checkbox">
+                    <input 
+                      v-model="formData.sendAcknowledgments" 
+                      type="checkbox"
+                    />
+                    <span>Send acknowledgments after processing</span>
+                  </label>
+                </div>
               </div>
             </form>
             
@@ -755,16 +826,35 @@ onMounted(() => {
               <div v-if="activeTab === 'config'" class="tab-content">
                 <h4>Delivery Configuration</h4>
                 
+                <!-- DDEX Information Section -->
+                <div class="config-section">
+                  <h5>DDEX Information</h5>
+                  <div class="config-grid">
+                    <div class="config-item">
+                      <label>Party Name</label>
+                      <code>{{ selectedDistributor?.partyName || 'Not configured' }}</code>
+                    </div>
+                    <div class="config-item">
+                      <label>Party ID (DPID)</label>
+                      <code>{{ selectedDistributor?.partyId || 'Not configured' }}</code>
+                    </div>
+                    <div class="config-item">
+                      <label>ERN Version</label>
+                      <code>{{ selectedDistributor?.ernVersion || '4.3' }}</code>
+                    </div>
+                    <div class="config-item">
+                      <label>Distributor ID</label>
+                      <code>{{ selectedDistributor?.id }}</code>
+                    </div>
+                  </div>
+                </div>
+                
                 <div class="config-section">
                   <h5>Connection Details</h5>
                   <div class="config-grid">
                     <div class="config-item">
                       <label>Protocol</label>
                       <code>{{ selectedDistributor?.deliveryProtocol?.toUpperCase() }}</code>
-                    </div>
-                    <div class="config-item">
-                      <label>Distributor ID</label>
-                      <code>{{ selectedDistributor?.id }}</code>
                     </div>
                   </div>
                 </div>
@@ -785,15 +875,39 @@ Files: manifest.xml (required)
                 
                 <div v-if="selectedDistributor?.deliveryProtocol === 'api'" class="config-section">
                   <h5>REST API Configuration</h5>
+                  
+                  <!-- API Key with visibility toggle -->
+                  <div class="config-item">
+                    <label>API Key</label>
+                    <div class="api-key-display">
+                      <code class="api-key-value">
+                        {{ showApiKey ? selectedDistributor.apiKey : '••••••••••••••••••••••••••••••••' }}
+                      </code>
+                      <button @click="showApiKey = !showApiKey" class="btn btn-sm btn-secondary">
+                        <font-awesome-icon :icon="showApiKey ? 'eye-slash' : 'eye'" />
+                      </button>
+                      <button @click="copyApiKey" class="btn btn-sm btn-primary">
+                        <font-awesome-icon icon="copy" /> Copy
+                      </button>
+                    </div>
+                  </div>
+                  
                   <div class="code-block">
                     <pre><code>Endpoint: POST https://us-central1-stardust-dsp.cloudfunctions.net/receiveDelivery
 Headers:
-  Authorization: Bearer {{ selectedDistributor?.apiKey || 'YOUR_API_KEY' }}
-  Content-Type: multipart/form-data
+  Authorization: Bearer {{ showApiKey ? selectedDistributor?.apiKey : '••••••••••••••••••••' }}
+  Content-Type: application/json
   
 Body:
-  manifest: manifest.xml (ERN file)
-  assets: ZIP archive with audio and images</code></pre>
+{
+  "distributorId": "{{ selectedDistributor?.id }}",
+  "messageId": "MSG_123456",
+  "releaseTitle": "Album Title",
+  "releaseArtist": "Artist Name",
+  "ernXml": "&lt;?xml version=\"1.0\" encoding=\"UTF-8\"?&gt;...",
+  "testMode": false,
+  "priority": "normal"
+}}</code></pre>
                     <button @click="copyConfig" class="copy-btn">
                       <font-awesome-icon icon="copy" />
                     </button>
@@ -805,72 +919,22 @@ Body:
               <div v-if="activeTab === 'distro'" class="tab-content">
                 <h4>Stardust Distro Configuration</h4>
                 <p class="info-text">
-                  Add this configuration to your Stardust Distro delivery targets:
+                  Copy this configuration and paste it when adding a delivery target in Stardust Distro:
                 </p>
                 
                 <div class="code-block">
-                  <pre v-if="selectedDistributor?.deliveryProtocol === 'storage'"><code>{
+                  <pre><code>{
   "name": "Stardust DSP",
   "type": "DSP",
-  "protocol": "storage",
+  "protocol": "{{ selectedDistributor?.deliveryProtocol === 'storage' ? 'storage' : 'API' }}",
+  "partyName": "{{ selectedDistributor?.partyName }}",
+  "partyId": "{{ selectedDistributor?.partyId }}",
+  "ernVersion": "{{ selectedDistributor?.ernVersion || '4.3' }}",
   "config": {
-    "distributorId": "{{ selectedDistributor?.id }}",
-    "bucket": "stardust-dsp.firebasestorage.app",
-    "path": "/deliveries/{{ selectedDistributor?.id }}/{timestamp}/"
+    "distributorId": "{{ selectedDistributor?.id }}"{{ selectedDistributor?.deliveryProtocol === 'api' ? ',\n    "apiKey": "' + (showApiKey ? selectedDistributor.apiKey : '••••••••••••••••••••') + '"' : '' }}{{ selectedDistributor?.deliveryProtocol === 'storage' ? ',\n    "bucket": "stardust-dsp.firebasestorage.app",\n    "path": "/deliveries/' + selectedDistributor?.id + '/{timestamp}/"' : '' }}{{ selectedDistributor?.deliveryProtocol === 'api' ? ',\n    "endpoint": "https://us-central1-stardust-dsp.cloudfunctions.net/receiveDelivery"' : '' }}
   },
   "requirements": {
-    "ernVersion": "4.3",
-    "audioFormat": ["WAV", "FLAC", "MP3"],
-    "imageSpecs": [
-      {
-        "type": "FrontCoverImage",
-        "minWidth": 3000,
-        "minHeight": 3000,
-        "format": "JPEG"
-      }
-    ]
-  },
-  "commercialModel": {
-    "type": "Streaming",
-    "usageTypes": ["OnDemandStream", "NonInteractiveStream"]
-  }
-}</code></pre>
-                  <pre v-else-if="selectedDistributor?.deliveryProtocol === 'api'"><code>{
-  "name": "Stardust DSP",
-  "type": "DSP",
-  "protocol": "api",
-  "config": {
-    "distributorId": "{{ selectedDistributor?.id }}",
-    "endpoint": "https://us-central1-stardust-dsp.cloudfunctions.net/receiveDelivery",
-    "apiKey": "{{ selectedDistributor?.apiKey || 'YOUR_API_KEY' }}"
-  },
-  "requirements": {
-    "ernVersion": "4.3",
-    "audioFormat": ["WAV", "FLAC", "MP3"],
-    "imageSpecs": [
-      {
-        "type": "FrontCoverImage",
-        "minWidth": 3000,
-        "minHeight": 3000,
-        "format": "JPEG"
-      }
-    ]
-  },
-  "commercialModel": {
-    "type": "Streaming",
-    "usageTypes": ["OnDemandStream", "NonInteractiveStream"]
-  }
-}</code></pre>
-                  <pre v-else><code>{
-  "name": "Stardust DSP",
-  "type": "DSP",
-  "protocol": "{{ selectedDistributor?.deliveryProtocol }}",
-  "config": {
-    "distributorId": "{{ selectedDistributor?.id }}",
-    "note": "Additional configuration required for {{ selectedDistributor?.deliveryProtocol }} protocol"
-  },
-  "requirements": {
-    "ernVersion": "4.3",
+    "ernVersion": "{{ selectedDistributor?.ernVersion || '4.3' }}",
     "audioFormat": ["WAV", "FLAC", "MP3"],
     "imageSpecs": [
       {
@@ -898,6 +962,7 @@ Body:
                     <ol>
                       <li>Go to Settings → Delivery Targets</li>
                       <li>Click "Add Target"</li>
+                      <li>Select "Import from Stardust DSP"</li>
                       <li>Paste this configuration</li>
                       <li>Test the connection</li>
                       <li>Start delivering releases!</li>
@@ -971,16 +1036,16 @@ Body:
                   <div v-for="delivery in recentDeliveries" :key="delivery.id" class="activity-item">
                     <div class="activity-status">
                       <font-awesome-icon 
-                        :icon="getStatusIcon(delivery.status)"
-                        :class="getStatusClass(delivery.status)"
+                        :icon="getStatusIcon(delivery.processing?.status || delivery.status)"
+                        :class="getStatusClass(delivery.processing?.status || delivery.status)"
                       />
                     </div>
                     <div class="activity-details">
                       <div class="activity-title">{{ delivery.ern?.messageId || delivery.id }}</div>
                       <div class="activity-meta">
-                        {{ formatDate(delivery.receivedAt) }} • 
-                        {{ delivery.releaseCount }} releases • 
-                        {{ delivery.status }}
+                        {{ formatDate(delivery.processing?.receivedAt || delivery.receivedAt) }} • 
+                        {{ delivery.ern?.releaseCount || 0 }} releases • 
+                        {{ delivery.processing?.status || delivery.status }}
                       </div>
                     </div>
                     <router-link 
@@ -1110,6 +1175,28 @@ Body:
   border-radius: var(--radius-sm);
 }
 
+.ddex-info {
+  margin-top: var(--space-xs);
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.ddex-label {
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  font-weight: var(--font-medium);
+}
+
+.ddex-value {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+  background-color: var(--color-bg-secondary);
+  padding: 2px var(--space-xs);
+  border-radius: var(--radius-sm);
+}
+
 /* Status Badge */
 .status-badge {
   padding: var(--space-xs) var(--space-sm);
@@ -1188,6 +1275,23 @@ Body:
 }
 
 /* Form Styles */
+.form-section {
+  margin-bottom: var(--space-lg);
+  padding-bottom: var(--space-lg);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.form-section:last-child {
+  border-bottom: none;
+}
+
+.form-section h4 {
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  margin-bottom: var(--space-md);
+  color: var(--color-heading);
+}
+
 .form-label.required::after {
   content: ' *';
   color: var(--color-error);
@@ -1227,6 +1331,22 @@ Body:
 .api-key-group {
   display: flex;
   gap: var(--space-sm);
+}
+
+.api-key-display {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+}
+
+.api-key-value {
+  flex: 1;
+  padding: var(--space-sm);
+  background-color: var(--color-bg-tertiary);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
 }
 
 /* Integration Modal */
@@ -1522,6 +1642,19 @@ Body:
 .text-error { color: var(--color-error); }
 .text-info { color: var(--color-info); }
 .text-warning { color: var(--color-warning); }
+
+.btn-icon {
+  background: none;
+  border: none;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  padding: var(--space-xs);
+  transition: all var(--transition-base);
+}
+
+.btn-icon:hover {
+  color: var(--color-text);
+}
 
 /* Modal Transition */
 .modal-enter-active,
