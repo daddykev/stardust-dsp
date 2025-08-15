@@ -1,76 +1,139 @@
 {
   "indexes": [
     {
-      "collectionGroup": "releases",
+      "collectionGroup": "deliveries",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "releaseDate", "order": "DESCENDING" }
-      ]
+        {
+          "fieldPath": "processing.status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "processing.receivedAt",
+          "order": "DESCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
     },
     {
-      "collectionGroup": "releases",
+      "collectionGroup": "deliveries",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "senderId", "order": "ASCENDING" },
-        { "fieldPath": "ingestedAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "tracks",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "releaseId", "order": "ASCENDING" },
-        { "fieldPath": "trackNumber", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "tracks",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "artistName", "order": "ASCENDING" },
-        { "fieldPath": "stats.playCount", "order": "DESCENDING" }
-      ]
+        {
+          "fieldPath": "sender",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "processing.receivedAt",
+          "order": "DESCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
     },
     {
       "collectionGroup": "playlists",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "public", "order": "ASCENDING" },
-        { "fieldPath": "stats.followers", "order": "DESCENDING" }
-      ]
+        {
+          "fieldPath": "public",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "stats.followers",
+          "order": "DESCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
     },
     {
       "collectionGroup": "plays",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "trackId", "order": "ASCENDING" },
-        { "fieldPath": "session.startTime", "order": "DESCENDING" }
-      ]
+        {
+          "fieldPath": "counted",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "session.startTime",
+          "order": "ASCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
     },
     {
       "collectionGroup": "plays",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "counted", "order": "ASCENDING" },
-        { "fieldPath": "session.startTime", "order": "ASCENDING" }
-      ]
+        {
+          "fieldPath": "trackId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "session.startTime",
+          "order": "DESCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
     },
     {
-      "collectionGroup": "deliveries",
+      "collectionGroup": "releases",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "sender", "order": "ASCENDING" },
-        { "fieldPath": "processing.receivedAt", "order": "DESCENDING" }
-      ]
+        {
+          "fieldPath": "senderId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "ingestedAt",
+          "order": "DESCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
     },
     {
-      "collectionGroup": "deliveries",
+      "collectionGroup": "releases",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "processing.status", "order": "ASCENDING" },
-        { "fieldPath": "processing.receivedAt", "order": "DESCENDING" }
-      ]
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "releaseDate",
+          "order": "DESCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "tracks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "artistName",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "stats.playCount",
+          "order": "DESCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "tracks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "releaseId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "trackNumber",
+          "order": "ASCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
     }
   ],
   "fieldOverrides": []

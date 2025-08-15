@@ -220,9 +220,10 @@ function copyDistroConfig() {
   const config = {
     name: "Stardust DSP",
     type: "DSP",
-    protocol: selectedDistributor.value.deliveryProtocol,
+    protocol: selectedDistributor.value.deliveryProtocol === 'storage' ? 'storage' : 'API',
     config: {
-      distributorId: selectedDistributor.value.id
+      distributorId: selectedDistributor.value.id,
+      apiKey: selectedDistributor.value.apiKey || undefined
     }
   }
   
@@ -231,10 +232,31 @@ function copyDistroConfig() {
     config.config.path = `/deliveries/${selectedDistributor.value.id}/{timestamp}/`
   } else {
     config.config.endpoint = "https://us-central1-stardust-dsp.cloudfunctions.net/receiveDelivery"
-    config.config.apiKey = selectedDistributor.value.apiKey
+  }
+  
+  // Only include requirements if needed
+  config.requirements = {
+    ernVersion: "4.3",
+    audioFormat: ["WAV", "FLAC", "MP3"],
+    imageSpecs: [
+      {
+        type: "FrontCoverImage",
+        minWidth: 3000,
+        minHeight: 3000,
+        format: "JPEG"
+      }
+    ]
+  }
+  
+  config.commercialModel = {
+    type: "Streaming",
+    usageTypes: ["OnDemandStream", "NonInteractiveStream"]
   }
   
   navigator.clipboard.writeText(JSON.stringify(config, null, 2))
+  
+  // Show a toast notification
+  alert('Configuration copied to clipboard! Paste this in Stardust Distro when adding a delivery target.')
 }
 
 // Download sample ERN

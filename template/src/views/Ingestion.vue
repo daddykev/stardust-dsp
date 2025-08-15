@@ -1,4 +1,3 @@
-<!-- src/views/Ingestion.vue -->
 <template>
   <div class="ingestion-page">
     <div class="container">
@@ -42,6 +41,19 @@
         </div>
       </div>
 
+      <!-- Debug Info (remove in production) -->
+      <div v-if="debugMode" class="debug-info card">
+        <div class="card-body">
+          <h3>Debug Information</h3>
+          <p>Total deliveries found: {{ deliveries.length }}</p>
+          <p>Total distributors found: {{ distributors.length }}</p>
+          <p>Last query error: {{ lastError || 'None' }}</p>
+          <button @click="testCreateDelivery" class="btn btn-warning btn-sm">
+            Create Test Delivery
+          </button>
+        </div>
+      </div>
+
       <!-- Filters -->
       <div class="filters card">
         <div class="card-body">
@@ -50,6 +62,7 @@
               <label>Status</label>
               <select v-model="filters.status" @change="applyFilters">
                 <option value="">All Status</option>
+                <option value="received">Received</option>
                 <option value="pending">Pending</option>
                 <option value="parsing">Parsing</option>
                 <option value="validating">Validating</option>
@@ -120,6 +133,9 @@
             <font-awesome-icon icon="inbox" class="empty-icon" />
             <h3>No Deliveries Yet</h3>
             <p>Waiting for distributors to send content</p>
+            <p v-if="distributors.length === 0" class="text-warning">
+              No distributors configured yet!
+            </p>
             <router-link to="/distributors" class="btn btn-primary">
               Configure First Distributor
             </router-link>
@@ -133,14 +149,14 @@
               class="timeline-item"
               @click="viewDeliveryDetails(delivery)"
             >
-              <div class="timeline-marker" :class="getStatusClass(delivery.processing.status)">
-                <font-awesome-icon :icon="getStatusIcon(delivery.processing.status)" />
+              <div class="timeline-marker" :class="getStatusClass(delivery.processing?.status || delivery.status)">
+                <font-awesome-icon :icon="getStatusIcon(delivery.processing?.status || delivery.status)" />
               </div>
               
               <div class="timeline-content">
                 <div class="timeline-header">
-                  <h4>{{ delivery.ern?.messageId || delivery.id }}</h4>
-                  <span class="timeline-time">{{ formatRelativeTime(delivery.processing.receivedAt) }}</span>
+                  <h4>{{ getMessageId(delivery) }}</h4>
+                  <span class="timeline-time">{{ formatRelativeTime(getReceivedAt(delivery)) }}</span>
                 </div>
                 
                 <div class="timeline-details">
@@ -150,11 +166,11 @@
                   </div>
                   <div class="detail-item">
                     <font-awesome-icon icon="compact-disc" />
-                    <span>{{ delivery.ern?.releaseCount || 0 }} releases</span>
+                    <span>{{ getReleaseCount(delivery) }} releases</span>
                   </div>
                   <div class="detail-item">
-                    <span class="status-badge" :class="getStatusClass(delivery.processing.status)">
-                      {{ formatStatus(delivery.processing.status) }}
+                    <span class="status-badge" :class="getStatusClass(delivery.processing?.status || delivery.status)">
+                      {{ formatStatus(delivery.processing?.status || delivery.status) }}
                     </span>
                   </div>
                 </div>
@@ -168,14 +184,14 @@
                 </div>
                 
                 <!-- Error Display -->
-                <div v-if="delivery.processing.error" class="error-message">
+                <div v-if="delivery.processing?.error" class="error-message">
                   <font-awesome-icon icon="exclamation-triangle" />
                   {{ delivery.processing.error }}
                 </div>
                 
                 <!-- Success Info -->
-                <div v-if="delivery.processing.status === 'completed'" class="success-info">
-                  <div class="release-list">
+                <div v-if="(delivery.processing?.status || delivery.status) === 'completed'" class="success-info">
+                  <div v-if="delivery.processing?.releases" class="release-list">
                     <div 
                       v-for="release in delivery.processing.releases" 
                       :key="release.releaseId"
@@ -222,17 +238,17 @@
               <tbody>
                 <tr v-for="delivery in deliveries" :key="delivery.id">
                   <td>
-                    <code>{{ delivery.ern?.messageId || delivery.id }}</code>
+                    <code>{{ getMessageId(delivery) }}</code>
                   </td>
                   <td>{{ getDistributorName(delivery.sender) }}</td>
                   <td>
-                    <span class="status-badge" :class="getStatusClass(delivery.processing.status)">
-                      {{ formatStatus(delivery.processing.status) }}
+                    <span class="status-badge" :class="getStatusClass(delivery.processing?.status || delivery.status)">
+                      {{ formatStatus(delivery.processing?.status || delivery.status) }}
                     </span>
                   </td>
-                  <td>{{ delivery.ern?.releaseCount || 0 }}</td>
-                  <td>{{ formatDate(delivery.processing.receivedAt) }}</td>
-                  <td>{{ formatDate(delivery.processing.completedAt) || '-' }}</td>
+                  <td>{{ getReleaseCount(delivery) }}</td>
+                  <td>{{ formatDate(getReceivedAt(delivery)) }}</td>
+                  <td>{{ formatDate(delivery.processing?.completedAt) || '-' }}</td>
                   <td>
                     <div class="action-buttons">
                       <button 
@@ -282,7 +298,9 @@ import {
   getDocs,
   onSnapshot,
   updateDoc,
-  doc
+  doc,
+  addDoc,
+  serverTimestamp
 } from 'firebase/firestore'
 import { db } from '../firebase'
 
@@ -294,6 +312,8 @@ const distributors = ref([])
 const isLoading = ref(false)
 const isRefreshing = ref(false)
 const viewMode = ref('timeline')
+const debugMode = ref(true) // Set to false in production
+const lastError = ref(null)
 const filters = ref({
   status: '',
   distributor: '',
@@ -330,30 +350,55 @@ const processingCount = computed(() =>
 )
 
 const queuedCount = computed(() => 
-  deliveries.value.filter(d => d.processing.status === 'pending').length
+  deliveries.value.filter(d => {
+    const status = d.processing?.status || d.status
+    return status === 'pending' || status === 'received'
+  }).length
 )
 
 const todayCount = computed(() => {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   return deliveries.value.filter(d => {
-    const deliveryDate = d.processing.receivedAt?.toDate?.() || new Date(d.processing.receivedAt)
+    const receivedAt = getReceivedAt(d)
+    if (!receivedAt) return false
+    const deliveryDate = receivedAt.toDate?.() || new Date(receivedAt)
     return deliveryDate >= today
   }).length
 })
 
-// Load deliveries
+// Helper functions for flexible data structure
+function getMessageId(delivery) {
+  return delivery.ern?.messageId || delivery.messageId || delivery.id
+}
+
+function getReleaseCount(delivery) {
+  return delivery.ern?.releaseCount || delivery.releaseCount || 0
+}
+
+function getReceivedAt(delivery) {
+  return delivery.processing?.receivedAt || delivery.receivedAt || delivery.createdAt
+}
+
+function getStatus(delivery) {
+  return delivery.processing?.status || delivery.status || 'unknown'
+}
+
+// Load deliveries with better error handling
 async function loadDeliveries() {
   isLoading.value = true
+  lastError.value = null
   
   try {
+    console.log('Loading deliveries...')
+    
+    // First, try a simple query without complex ordering
     let q = query(
       collection(db, 'deliveries'),
-      orderBy('processing.receivedAt', 'desc'),
       limit(50)
     )
     
-    // Apply filters
+    // Apply filters if set
     if (filters.value.status) {
       q = query(q, where('processing.status', '==', filters.value.status))
     }
@@ -362,13 +407,38 @@ async function loadDeliveries() {
     }
     
     const snapshot = await getDocs(q)
+    console.log(`Found ${snapshot.size} deliveries`)
+    
     deliveries.value = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     }))
     
+    // Sort client-side if needed
+    deliveries.value.sort((a, b) => {
+      const dateA = getReceivedAt(a)
+      const dateB = getReceivedAt(b)
+      if (!dateA || !dateB) return 0
+      const timeA = dateA.toDate?.() ? dateA.toDate().getTime() : new Date(dateA).getTime()
+      const timeB = dateB.toDate?.() ? dateB.toDate().getTime() : new Date(dateB).getTime()
+      return timeB - timeA
+    })
+    
   } catch (error) {
     console.error('Error loading deliveries:', error)
+    lastError.value = error.message
+    
+    // Try loading without any filters as fallback
+    try {
+      const snapshot = await getDocs(collection(db, 'deliveries'))
+      console.log(`Fallback: Found ${snapshot.size} deliveries`)
+      deliveries.value = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }))
+    } catch (fallbackError) {
+      console.error('Fallback also failed:', fallbackError)
+    }
   } finally {
     isLoading.value = false
   }
@@ -377,13 +447,41 @@ async function loadDeliveries() {
 // Load distributors
 async function loadDistributors() {
   try {
+    console.log('Loading distributors...')
     const snapshot = await getDocs(collection(db, 'distributors'))
+    console.log(`Found ${snapshot.size} distributors`)
     distributors.value = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     }))
   } catch (error) {
     console.error('Error loading distributors:', error)
+  }
+}
+
+// Create a test delivery for debugging
+async function testCreateDelivery() {
+  try {
+    const testDelivery = {
+      sender: distributors.value[0]?.id || 'TEST_DISTRIBUTOR',
+      senderName: distributors.value[0]?.name || 'Test Distributor',
+      messageId: `TEST_${Date.now()}`,
+      releaseTitle: 'Test Release',
+      releaseArtist: 'Test Artist',
+      ernXml: '<ern>test</ern>',
+      processing: {
+        receivedAt: serverTimestamp(),
+        status: 'received'
+      },
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    }
+    
+    const docRef = await addDoc(collection(db, 'deliveries'), testDelivery)
+    console.log('Test delivery created:', docRef.id)
+    await loadDeliveries()
+  } catch (error) {
+    console.error('Error creating test delivery:', error)
   }
 }
 
@@ -408,9 +506,8 @@ function viewDeliveryDetails(delivery) {
 
 // Check if can reprocess
 function canReprocess(delivery) {
-  return ['failed', 'validation_failed', 'processing_failed'].includes(
-    delivery.processing.status
-  )
+  const status = getStatus(delivery)
+  return ['failed', 'validation_failed', 'processing_failed', 'error'].includes(status)
 }
 
 // Reprocess delivery
@@ -420,7 +517,7 @@ async function reprocessDelivery(delivery) {
   try {
     await updateDoc(doc(db, 'deliveries', delivery.id), {
       'processing.status': 'pending',
-      'processing.reprocessedAt': new Date()
+      'processing.reprocessedAt': serverTimestamp()
     })
     
     await loadDeliveries()
@@ -437,13 +534,14 @@ async function downloadAcknowledgment(delivery) {
 
 // Utility functions
 function isProcessing(delivery) {
-  const status = delivery.processing.status
-  return ['pending', 'parsing', 'validating', 'processing_releases'].includes(status)
+  const status = getStatus(delivery)
+  return ['received', 'pending', 'parsing', 'validating', 'processing_releases'].includes(status)
 }
 
 function getProgress(delivery) {
-  const status = delivery.processing.status
+  const status = getStatus(delivery)
   const steps = {
+    'received': 5,
     'pending': 10,
     'parsing': 30,
     'validating': 50,
@@ -454,8 +552,9 @@ function getProgress(delivery) {
 }
 
 function getCurrentStep(delivery) {
-  const status = delivery.processing.status
+  const status = getStatus(delivery)
   const steps = {
+    'received': 'Delivery received...',
     'pending': 'Queued for processing...',
     'parsing': 'Parsing ERN XML...',
     'validating': 'Validating with DDEX Workbench...',
@@ -467,27 +566,28 @@ function getCurrentStep(delivery) {
 
 function getStatusClass(status) {
   if (status === 'completed') return 'success'
-  if (status.includes('failed')) return 'error'
+  if (status?.includes('failed') || status === 'error') return 'error'
   if (['parsing', 'validating', 'processing_releases'].includes(status)) return 'processing'
-  if (status === 'pending') return 'pending'
+  if (status === 'pending' || status === 'received') return 'pending'
   return 'default'
 }
 
 function getStatusIcon(status) {
   if (status === 'completed') return 'check-circle'
-  if (status.includes('failed')) return 'times-circle'
+  if (status?.includes('failed') || status === 'error') return 'times-circle'
   if (['parsing', 'validating', 'processing_releases'].includes(status)) return 'spinner'
-  if (status === 'pending') return 'clock'
+  if (status === 'pending' || status === 'received') return 'clock'
   return 'question-circle'
 }
 
 function formatStatus(status) {
+  if (!status) return 'Unknown'
   return status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
 }
 
 function getDistributorName(distributorId) {
   const dist = distributors.value.find(d => d.id === distributorId)
-  return dist?.name || distributorId
+  return dist?.name || distributorId || 'Unknown'
 }
 
 function formatDate(timestamp) {
@@ -512,39 +612,51 @@ function formatRelativeTime(timestamp) {
   return `${days}d ago`
 }
 
-// Setup real-time updates
+// Setup real-time updates with better error handling
 function setupRealtimeUpdates() {
-  unsubscribe = onSnapshot(
-    query(
-      collection(db, 'deliveries'),
-      orderBy('processing.receivedAt', 'desc'),
-      limit(20)
-    ),
-    (snapshot) => {
-      const updates = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }))
-      
-      // Update or add deliveries
-      updates.forEach(update => {
-        const index = deliveries.value.findIndex(d => d.id === update.id)
-        if (index >= 0) {
-          deliveries.value[index] = update
-        } else {
-          deliveries.value.unshift(update)
+  try {
+    console.log('Setting up real-time updates...')
+    
+    // Use a simpler query for real-time updates
+    unsubscribe = onSnapshot(
+      query(
+        collection(db, 'deliveries'),
+        limit(20)
+      ),
+      (snapshot) => {
+        console.log(`Real-time update: ${snapshot.size} deliveries`)
+        const updates = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }))
+        
+        // Update or add deliveries
+        updates.forEach(update => {
+          const index = deliveries.value.findIndex(d => d.id === update.id)
+          if (index >= 0) {
+            deliveries.value[index] = update
+          } else {
+            deliveries.value.unshift(update)
+          }
+        })
+        
+        // Keep only the most recent 50
+        if (deliveries.value.length > 50) {
+          deliveries.value = deliveries.value.slice(0, 50)
         }
-      })
-      
-      // Keep only the most recent 50
-      if (deliveries.value.length > 50) {
-        deliveries.value = deliveries.value.slice(0, 50)
+      },
+      (error) => {
+        console.error('Real-time subscription error:', error)
+        lastError.value = error.message
       }
-    }
-  )
+    )
+  } catch (error) {
+    console.error('Error setting up real-time updates:', error)
+  }
 }
 
 onMounted(() => {
+  console.log('Ingestion component mounted')
   loadDeliveries()
   loadDistributors()
   setupRealtimeUpdates()
@@ -967,6 +1079,26 @@ onUnmounted(() => {
 .status-badge.default {
   background-color: var(--color-text-tertiary);
   color: white;
+}
+
+/* Debug styles */
+.debug-info {
+  background-color: var(--color-warning);
+  color: white;
+  margin-bottom: var(--space-lg);
+}
+
+.debug-info h3 {
+  margin-bottom: var(--space-sm);
+}
+
+.debug-info p {
+  margin-bottom: var(--space-xs);
+}
+
+.text-warning {
+  color: var(--color-warning);
+  font-weight: var(--font-medium);
 }
 
 /* Action Buttons */

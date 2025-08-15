@@ -1,0 +1,29 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // DEVELOPMENT RULES - More permissive for testing
+    
+    // Deliveries folder - for receiving from distributors
+    match /deliveries/{allPaths=**} {
+      // Allow authenticated users to read/write deliveries
+      allow read, write: if request.auth != null;
+    }
+    
+    // Audio files - public read for streaming
+    match /audio/{allPaths=**} {
+      allow read: if true;  // Public streaming
+      allow write: if request.auth != null;
+    }
+    
+    // Images - public read for artwork
+    match /images/{allPaths=**} {
+      allow read: if true;  // Public images
+      allow write: if request.auth != null;
+    }
+    
+    // Everything else requires authentication
+    match /{allPaths=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
