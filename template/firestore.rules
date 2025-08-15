@@ -83,6 +83,13 @@ service cloud.firestore {
     }
     
     // Industry collections
+    match /distributors/{distributorId} {
+      allow read: if isAdmin() || isIndustryUser();
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+    
     match /deliveries/{deliveryId} {
       allow read: if isIndustryUser() || isAdmin();
       allow create: if isIndustryUser();
