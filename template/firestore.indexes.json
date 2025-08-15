@@ -1,4 +1,77 @@
 {
-  "indexes": [],
+  "indexes": [
+    {
+      "collectionGroup": "releases",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "releaseDate", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "releases",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "senderId", "order": "ASCENDING" },
+        { "fieldPath": "ingestedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "tracks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "releaseId", "order": "ASCENDING" },
+        { "fieldPath": "trackNumber", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "tracks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "artistName", "order": "ASCENDING" },
+        { "fieldPath": "stats.playCount", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "playlists",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "public", "order": "ASCENDING" },
+        { "fieldPath": "stats.followers", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "plays",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "trackId", "order": "ASCENDING" },
+        { "fieldPath": "session.startTime", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "plays",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "counted", "order": "ASCENDING" },
+        { "fieldPath": "session.startTime", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "deliveries",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "sender", "order": "ASCENDING" },
+        { "fieldPath": "processing.receivedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "deliveries",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "processing.status", "order": "ASCENDING" },
+        { "fieldPath": "processing.receivedAt", "order": "DESCENDING" }
+      ]
+    }
+  ],
   "fieldOverrides": []
 }
