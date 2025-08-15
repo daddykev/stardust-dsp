@@ -4,6 +4,8 @@ import SplashPage from '../views/SplashPage.vue'
 import Login from '../views/Login.vue'
 import Signup from '../views/Signup.vue'
 import Dashboard from '../views/Dashboard.vue'
+import Distributors from '../views/Distributors.vue'
+import Ingestion from '../views/Ingestion.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -29,6 +31,24 @@ const router = createRouter({
       path: '/dashboard',
       name: 'dashboard',
       component: Dashboard,
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/distributors',
+      name: 'distributors',
+      component: Distributors,
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/ingestion',
+      name: 'ingestion',
+      component: Ingestion,
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/ingestion/:id',
+      name: 'ingestion-detail',
+      component: () => import('../views/IngestionDetail.vue'),
       meta: { requiresAuth: true }
     },
     // Catch-all route - redirect to home

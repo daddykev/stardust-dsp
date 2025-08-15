@@ -41,7 +41,29 @@ import {
   faBolt,
   faShieldAlt,
   faExpandArrowsAlt,
-  faCode  
+  faCode,
+  faInbox,
+  faStream,
+  faTable,
+  faExclamationTriangle,
+  faCloudUpload,
+  faPlug,
+  faPause,
+  faPlay,
+  faSpinner,
+  faClock,
+  faQuestionCircle,
+  faFile,
+  faArrowLeft,
+  faRedo,
+  faDownload,
+  faBug,
+  faFileCode,
+  faFlagCheckered,
+  faInfoCircle,
+  faExclamationCircle,
+  faEye,
+  faSync  
 } from '@fortawesome/free-solid-svg-icons'
 
 // Import brand icons
@@ -87,7 +109,29 @@ library.add(
   faBolt,
   faShieldAlt,
   faExpandArrowsAlt,
-  faCode 
+  faCode,
+  faInbox,
+  faStream,
+  faTable,
+  faExclamationTriangle,
+  faCloudUpload,
+  faPlug,
+  faPause,
+  faPlay,
+  faSpinner,
+  faClock,
+  faQuestionCircle,
+  faFile,
+  faArrowLeft,
+  faRedo,
+  faDownload,
+  faBug,
+  faFileCode,
+  faFlagCheckered,
+  faInfoCircle,
+  faExclamationCircle,
+  faEye,
+  faSync
 )
 
 // Add brand icons to the library

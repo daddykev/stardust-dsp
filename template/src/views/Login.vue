@@ -142,10 +142,10 @@ const handleForgotPassword = async () => {
         <div class="card-body">
           <div class="auth-header">
             <div class="auth-logo">
-              <font-awesome-icon icon="truck" />
+              <font-awesome-icon icon="headphones" />
             </div>
             <h1 class="auth-title">Welcome Back</h1>
-            <p class="auth-subtitle">Sign in to your DDEX Distro account</p>
+            <p class="auth-subtitle">Sign in to your Stardust DSP account</p>
           </div>
 
           <form @submit.prevent="handleLogin" class="auth-form">

@@ -30,7 +30,9 @@ const navigationItems = computed(() => {
     { name: 'New Release', path: '/releases/new', icon: 'plus' },
     { name: 'Deliveries', path: '/deliveries', icon: 'truck' },
     { name: 'Analytics', path: '/analytics', icon: 'chart-line' },
-    { name: 'Settings', path: '/settings', icon: 'cog' }
+    { name: 'Settings', path: '/settings', icon: 'cog' },
+    { name: 'Ingestion', path: '/ingestion', icon: 'inbox' },
+    { name: 'Distributors', path: '/distributors', icon: 'truck' },
   ]
 })
 
@@ -77,7 +79,7 @@ const isActiveRoute = (path) => {
         <!-- Logo -->
         <router-link to="/" class="navbar-brand">
           <div class="logo">
-            <font-awesome-icon icon="compact-disc" />
+            <font-awesome-icon icon="headphones" />
           </div>
           <span class="brand-text">Stardust DSP</span>
         </router-link>
