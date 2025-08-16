@@ -28,10 +28,21 @@
             </div>
           </div>
           <div class="header-actions">
+            <!-- Manual Process button for testing -->
+            <button 
+              @click="manualProcess"
+              class="btn btn-warning"
+              :disabled="isLoading"
+              title="Manually trigger processing (for testing)"
+            >
+              <font-awesome-icon icon="play" :spin="isLoading" />
+              Manual Process
+            </button>
             <button 
               v-if="canReprocess"
               @click="reprocessDelivery"
               class="btn btn-secondary"
+              :disabled="isLoading"
             >
               <font-awesome-icon icon="redo" />
               Reprocess
@@ -336,7 +347,7 @@
                 <pre><code>{{ delivery.processing.errorDetails }}</code></pre>
               </div>
               <div class="error-actions">
-                <button @click="reprocessDelivery" class="btn btn-primary">
+                <button @click="reprocessDelivery" class="btn btn-primary" :disabled="isLoading">
                   <font-awesome-icon icon="redo" />
                   Retry Processing
                 </button>
@@ -389,7 +400,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { doc, getDoc, updateDoc, onSnapshot } from 'firebase/firestore'
+import { doc, getDoc, onSnapshot } from 'firebase/firestore'
 import { db } from '../firebase'
 
 const route = useRoute()
@@ -541,22 +552,79 @@ async function refreshDelivery() {
   }, 500)
 }
 
-// Reprocess delivery
+// Reprocess delivery using Cloud Function
 async function reprocessDelivery() {
   if (!confirm('Are you sure you want to reprocess this delivery?')) return
   
+  isLoading.value = true
+  
   try {
-    await updateDoc(doc(db, 'deliveries', delivery.value.id), {
-      'processing.status': 'pending',
-      'processing.reprocessedAt': new Date(),
-      'processing.error': null,
-      'processing.errorDetails': null
+    // Call the Cloud Function endpoint
+    const response = await fetch('https://us-central1-stardust-dsp.cloudfunctions.net/reprocessDelivery', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        deliveryId: delivery.value.id
+      })
     })
     
-    await refreshDelivery()
+    const result = await response.json()
+    
+    if (response.ok) {
+      // Success - the delivery should start processing
+      console.log('Reprocess triggered:', result)
+      
+      // Show success message
+      alert('Delivery reprocessing started successfully!')
+      
+      // The real-time listener will automatically update the UI
+    } else {
+      // Error from the function
+      console.error('Reprocess failed:', result)
+      alert(`Failed to reprocess: ${result.error || 'Unknown error'}`)
+    }
   } catch (error) {
-    console.error('Error reprocessing delivery:', error)
-    alert('Failed to reprocess delivery')
+    console.error('Error calling reprocess function:', error)
+    alert('Failed to reprocess delivery. Please check the console for details.')
+  } finally {
+    isLoading.value = false
+  }
+}
+
+// Manual process for testing (forces processing regardless of status)
+async function manualProcess() {
+  if (!confirm('Manually trigger processing for this delivery? This will force processing regardless of current status.')) return
+  
+  isLoading.value = true
+  
+  try {
+    const response = await fetch('https://us-central1-stardust-dsp.cloudfunctions.net/reprocessDelivery', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        deliveryId: delivery.value.id
+      })
+    })
+    
+    const result = await response.json()
+    
+    if (response.ok) {
+      console.log('Manual processing triggered:', result)
+      alert('Manual processing started!')
+      // The real-time listener will automatically update the UI
+    } else {
+      console.error('Manual process failed:', result)
+      alert(`Failed: ${result.error || 'Unknown error'}`)
+    }
+  } catch (error) {
+    console.error('Error triggering manual process:', error)
+    alert('Failed to trigger manual processing')
+  } finally {
+    isLoading.value = false
   }
 }
 
@@ -1191,6 +1259,25 @@ onUnmounted(() => {
   font-weight: var(--font-bold);
 }
 
+/* Warning Button */
+.btn-warning {
+  background-color: var(--color-warning);
+  color: white;
+}
+
+.btn-warning:hover:not(:disabled) {
+  background-color: var(--color-warning);
+  color: white;
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.btn-warning:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* Loading & Empty States */
 .loading-state {
   display: flex;
@@ -1269,10 +1356,12 @@ onUnmounted(() => {
   
   .header-actions {
     width: 100%;
+    flex-wrap: wrap;
   }
   
   .header-actions .btn {
     flex: 1;
+    min-width: 150px;
   }
   
   .info-grid {

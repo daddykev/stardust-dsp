@@ -38,6 +38,167 @@ exports.sendAcknowledgment = sendAcknowledgment;
 exports.notifyError = notifyError;
 
 // ============================================
+// PROCESSING PIPELINE
+// ============================================
+
+/**
+ * Process delivery through the pipeline
+ * This function orchestrates the entire processing flow
+ */
+async function processDeliveryPipeline(deliveryId) {
+  const db = admin.firestore();
+  const deliveryRef = db.collection('deliveries').doc(deliveryId);
+  
+  try {
+    console.log(`Starting processing pipeline for delivery: ${deliveryId}`);
+    
+    // 1. Update status to parsing
+    await deliveryRef.update({
+      'processing.status': 'parsing',
+      'processing.parsedAt': admin.firestore.FieldValue.serverTimestamp()
+    });
+    
+    // Simulate parsing (in production, you'd parse the actual ERN XML)
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // Get delivery data
+    const deliveryDoc = await deliveryRef.get();
+    const delivery = deliveryDoc.data();
+    
+    // 2. Update status to validating
+    await deliveryRef.update({
+      'processing.status': 'validating',
+      'validation.validatedAt': admin.firestore.FieldValue.serverTimestamp()
+    });
+    
+    // Simulate validation with DDEX Workbench
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    
+    // Mock validation results
+    const validationResults = {
+      valid: true,
+      errors: [],
+      warnings: [],
+      info: ['ERN 4.3 compliant', 'All required fields present']
+    };
+    
+    await deliveryRef.update({
+      'validation': validationResults
+    });
+    
+    // 3. Update status to processing releases
+    await deliveryRef.update({
+      'processing.status': 'processing_releases',
+      'processing.processingStartedAt': admin.firestore.FieldValue.serverTimestamp()
+    });
+    
+    // Simulate processing releases
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    
+    // Mock release data
+    const releases = [{
+      releaseId: `REL_${Date.now()}`,
+      title: delivery.releaseTitle || 'Unknown Release',
+      artist: delivery.releaseArtist || 'Unknown Artist',
+      trackCount: Math.floor(Math.random() * 10) + 1,
+      status: 'active'
+    }];
+    
+    // 4. Complete processing
+    await deliveryRef.update({
+      'processing.status': 'completed',
+      'processing.completedAt': admin.firestore.FieldValue.serverTimestamp(),
+      'processing.releases': releases
+    });
+    
+    // 5. Generate acknowledgment
+    const acknowledgment = {
+      messageId: `ACK_${delivery.messageId}_${Date.now()}`,
+      sentAt: admin.firestore.FieldValue.serverTimestamp(),
+      documentId: `ACK_DOC_${deliveryId}`
+    };
+    
+    await deliveryRef.update({
+      'acknowledgment': acknowledgment
+    });
+    
+    // Store acknowledgment document
+    await db.collection('acknowledgments').doc(acknowledgment.documentId).set({
+      deliveryId: deliveryId,
+      messageId: acknowledgment.messageId,
+      content: generateAcknowledgmentXML(delivery, releases),
+      createdAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+    
+    console.log(`Processing completed for delivery: ${deliveryId}`);
+    
+    // Send notification
+    await db.collection('notifications').add({
+      type: 'processing_complete',
+      deliveryId: deliveryId,
+      distributorId: delivery.sender,
+      message: `Delivery ${deliveryId} processed successfully`,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      read: false
+    });
+    
+  } catch (error) {
+    console.error(`Processing failed for delivery ${deliveryId}:`, error);
+    
+    // Update status to failed
+    await deliveryRef.update({
+      'processing.status': 'failed',
+      'processing.error': error.message,
+      'processing.errorDetails': error.stack,
+      'processing.failedAt': admin.firestore.FieldValue.serverTimestamp()
+    });
+    
+    // Send error notification
+    await db.collection('notifications').add({
+      type: 'processing_failed',
+      deliveryId: deliveryId,
+      distributorId: (await deliveryRef.get()).data().sender,
+      message: `Delivery ${deliveryId} processing failed: ${error.message}`,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      read: false
+    });
+    
+    throw error;
+  }
+}
+
+// Helper function to generate acknowledgment XML
+function generateAcknowledgmentXML(delivery, releases) {
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<AcknowledgmentMessage>
+  <MessageHeader>
+    <MessageId>ACK_${delivery.messageId}</MessageId>
+    <MessageCreatedDateTime>${new Date().toISOString()}</MessageCreatedDateTime>
+    <MessageSender>
+      <PartyId>STARDUST_DSP</PartyId>
+      <PartyName>
+        <FullName>Stardust DSP Platform</FullName>
+      </PartyName>
+    </MessageSender>
+  </MessageHeader>
+  <AcknowledgmentStatus>
+    <Status>Acknowledged</Status>
+    <DateTime>${new Date().toISOString()}</DateTime>
+  </AcknowledgmentStatus>
+  <ProcessedReleases>
+    ${releases.map(r => `
+    <Release>
+      <ReleaseId>${r.releaseId}</ReleaseId>
+      <Title>${r.title}</Title>
+      <ProcessingStatus>Success</ProcessingStatus>
+      <TrackCount>${r.trackCount}</TrackCount>
+    </Release>`).join('')}
+  </ProcessedReleases>
+</AcknowledgmentMessage>`;
+  return xml;
+}
+
+// ============================================
 // API ENDPOINTS
 // ============================================
 
@@ -77,10 +238,6 @@ exports.testValidation = onRequest({
     });
   }
 });
-
-// ============================================
-// API ENDPOINTS
-// ============================================
 
 // Get acknowledgment for a delivery
 exports.getAcknowledgment = onRequest({
@@ -335,8 +492,11 @@ exports.receiveDelivery = onRequest({
         
       console.log('Delivery queued for automatic processing');
       
-      // Trigger processing pipeline if you have one
-      // await processDeliveryPipeline(deliveryId);
+      // Trigger processing pipeline asynchronously
+      // Don't await this so we can return immediately
+      processDeliveryPipeline(deliveryId).catch(error => {
+        console.error('Background processing failed:', error);
+      });
     }
     
     // Send notification if configured
@@ -452,13 +612,114 @@ exports.processStorageDelivery = onObjectFinalized({
   
   // Queue for processing if auto-process is enabled
   if (distributor.autoProcess) {
-    await admin.firestore().collection('processingQueue').add({
-      deliveryId: deliveryId,
-      distributorId: distributorId,
-      priority: 'normal',
-      createdAt: now
+    await admin.firestore()
+      .collection('deliveries')
+      .doc(deliveryId)
+      .update({
+        'processing.status': 'pending',
+        'processing.queuedAt': now
+      });
+    
+    // Trigger processing pipeline
+    processDeliveryPipeline(deliveryId).catch(error => {
+      console.error('Background processing failed:', error);
     });
   }
   
   return { success: true, deliveryId };
+});
+
+// ============================================
+// BACKGROUND PROCESSING TRIGGER
+// ============================================
+
+/**
+ * Cloud Scheduler function to process pending deliveries
+ * This runs every minute to pick up any pending deliveries
+ */
+exports.processPendingDeliveries = onRequest({
+  cors: false,
+  maxInstances: 5
+}, async (request, response) => {
+  try {
+    const db = admin.firestore();
+    
+    // Find pending deliveries
+    const pendingDeliveries = await db.collection('deliveries')
+      .where('processing.status', '==', 'pending')
+      .orderBy('processing.queuedAt', 'asc')
+      .limit(5) // Process up to 5 at a time
+      .get();
+    
+    console.log(`Found ${pendingDeliveries.size} pending deliveries`);
+    
+    // Process each delivery
+    const promises = pendingDeliveries.docs.map(doc => 
+      processDeliveryPipeline(doc.id).catch(error => {
+        console.error(`Failed to process ${doc.id}:`, error);
+        return { deliveryId: doc.id, error: error.message };
+      })
+    );
+    
+    const results = await Promise.all(promises);
+    
+    response.json({
+      processed: pendingDeliveries.size,
+      results: results
+    });
+    
+  } catch (error) {
+    console.error('Error processing pending deliveries:', error);
+    response.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================
+// MANUAL TRIGGER FOR STUCK DELIVERIES
+// ============================================
+
+/**
+ * Manually trigger processing for a specific delivery
+ * Useful for retrying failed or stuck deliveries
+ */
+exports.reprocessDelivery = onRequest({
+  cors: true,
+  maxInstances: 5
+}, async (request, response) => {
+  try {
+    const { deliveryId } = request.body;
+    
+    if (!deliveryId) {
+      response.status(400).json({ error: 'Missing deliveryId' });
+      return;
+    }
+    
+    console.log(`Manual reprocess requested for delivery: ${deliveryId}`);
+    
+    // Reset status to pending
+    await admin.firestore()
+      .collection('deliveries')
+      .doc(deliveryId)
+      .update({
+        'processing.status': 'pending',
+        'processing.error': null,
+        'processing.errorDetails': null,
+        'processing.reprocessedAt': admin.firestore.FieldValue.serverTimestamp()
+      });
+    
+    // Trigger processing
+    await processDeliveryPipeline(deliveryId);
+    
+    response.json({
+      success: true,
+      message: `Delivery ${deliveryId} reprocessed successfully`
+    });
+    
+  } catch (error) {
+    console.error('Reprocessing failed:', error);
+    response.status(500).json({ 
+      error: error.message,
+      details: error.stack 
+    });
+  }
 });
