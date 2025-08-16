@@ -6,6 +6,7 @@ import Signup from '../views/Signup.vue'
 import Dashboard from '../views/Dashboard.vue'
 import Distributors from '../views/Distributors.vue'
 import Ingestion from '../views/Ingestion.vue'
+import Catalog from '../views/Catalog.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -31,6 +32,18 @@ const router = createRouter({
       path: '/dashboard',
       name: 'dashboard',
       component: Dashboard,
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/catalog',
+      name: 'catalog',
+      component: Catalog,
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/releases/:id',
+      name: 'release-detail',
+      component: () => import('../views/ReleaseDetail.vue'),
       meta: { requiresAuth: true }
     },
     {
