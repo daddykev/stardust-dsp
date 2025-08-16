@@ -75,7 +75,19 @@ import {
   faRandom,
   faHeart,
   faShare,
-  faCalendar
+  faCalendar,
+  faVolumeUp,
+  faVolumeDown,
+  faVolumeMute,
+  faGripVertical,
+  faRetweet,
+  faTh,
+  faList,
+  faChevronUp,
+  faChevronDown,
+  faEllipsisH,
+  faBookmark,
+  faHeartBroken
 } from '@fortawesome/free-solid-svg-icons'
 
 // Import brand icons
@@ -155,7 +167,19 @@ library.add(
   faRandom,
   faHeart,
   faShare,
-  faCalendar
+  faCalendar,
+  faVolumeUp,
+  faVolumeDown,
+  faVolumeMute,
+  faGripVertical,
+  faRetweet,
+  faTh,
+  faList,
+  faChevronUp,
+  faChevronDown,
+  faEllipsisH,
+  faBookmark,
+  faHeartBroken  
 )
 
 // Add brand icons to the library

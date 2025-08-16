@@ -2,9 +2,11 @@
 import { ref, computed, onMounted, provide } from 'vue'
 import { RouterView } from 'vue-router'
 import NavBar from './components/NavBar.vue'
+import FullPlayer from './components/player/FullPlayer.vue'
 
 // Theme management
 const theme = ref(localStorage.getItem('theme') || 'light')
+const fullPlayerRef = ref(null)
 
 const toggleTheme = () => {
   theme.value = theme.value === 'light' ? 'dark' : 'light'
@@ -22,6 +24,14 @@ provide('theme', {
   current: theme,
   toggle: toggleTheme
 })
+
+// Provide player controls to child components
+provide('fullPlayer', {
+  open: () => fullPlayerRef.value?.open(),
+  close: () => fullPlayerRef.value?.close(),
+  minimize: () => fullPlayerRef.value?.minimize(),
+  maximize: () => fullPlayerRef.value?.maximize()
+})
 </script>
 
 <template>
@@ -35,6 +45,9 @@ provide('theme', {
         </transition>
       </RouterView>
     </main>
+    
+    <!-- Full Player Component -->
+    <FullPlayer ref="fullPlayerRef" />
   </div>
 </template>
 
