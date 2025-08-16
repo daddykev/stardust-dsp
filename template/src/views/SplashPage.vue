@@ -98,18 +98,19 @@ const copyCode = () => {
 
           <div class="hero-stats">
             <div class="stat">
-              <span class="stat-value">1M+</span>
-              <span class="stat-label">Tracks Ingested</span>
-            </div>
-            <div class="stat">
-              <span class="stat-value">100k+</span>
-              <span class="stat-label">Active Listeners</span>
+              <span class="stat-value">ERN 4.3</span>
+              <span class="stat-label">DDEX Compliant</span>
             </div>
             <div class="stat">
               <span class="stat-value"><2min</span>
               <span class="stat-label">Ingestion Time</span>
             </div>
+            <div class="stat">
+              <span class="stat-value">100%</span>
+              <span class="stat-label">Firebase Uptime</span>
+            </div>
           </div>
+
         </div>
       </div>
     </section>
@@ -198,7 +199,7 @@ const copyCode = () => {
                 <span class="flow-label">ERN Delivery</span>
               </div>
               <div class="flow-node flow-dsp">
-                <font-awesome-icon icon="music" class="node-icon" />
+                <font-awesome-icon icon="headphones" class="node-icon" />
                 <span>Stardust DSP</span>
               </div>
               <div class="flow-arrow">
@@ -206,7 +207,7 @@ const copyCode = () => {
                 <span class="flow-label">Streaming</span>
               </div>
               <div class="flow-node flow-user">
-                <font-awesome-icon icon="headphones" class="node-icon" />
+                <font-awesome-icon icon="users" class="node-icon" />
                 <span>Listeners</span>
               </div>
             </div>
@@ -340,7 +341,7 @@ const copyCode = () => {
           
           <div class="cta-footer">
             <p class="cta-note">
-              Part of the Stardust ecosystem • Works seamlessly with Stardust Distro & DDEX Workbench
+              Part of the Stardust Ecosystem • Works seamlessly with Stardust Distro & DDEX Workbench
             </p>
           </div>
         </div>
