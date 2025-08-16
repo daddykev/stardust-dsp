@@ -1,43 +1,27 @@
 // functions/ingestion/processor.js
-const { onMessagePublished } = require("firebase-functions/v2/pubsub");
 const { logger } = require("firebase-functions");
 const admin = require("firebase-admin");
 const { Storage } = require("@google-cloud/storage");
-const { PubSub } = require("@google-cloud/pubsub");
 const path = require("path");
 const { v4: uuidv4 } = require("uuid");
 
 const db = admin.firestore();
 const storage = admin.storage();
 const gcs = new Storage();
-const pubsub = new PubSub();
 
 // Firebase Storage bucket
 const STORAGE_BUCKET = "stardust-dsp.firebasestorage.app";
 
 /**
  * Process releases and their assets
+ * Direct function - no longer Pub/Sub triggered
  */
-exports.processRelease = onMessagePublished({
-  topic: "release-processing",
-  timeoutSeconds: 540, // 9 minutes
-  memory: "2GiB",
-  maxInstances: 3
-}, async (event) => {
-  const { deliveryId, releaseData, deliveryPath, ernVersion } = event.data.message.json;
+async function processReleases(deliveryId, releases, deliveryData) {
+  logger.log(`Processing ${releases.length} releases from delivery: ${deliveryId}`);
   
-  logger.log(`Processing release from delivery: ${deliveryId}`);
+  const processedReleases = [];
   
   try {
-    // Update status
-    await db.collection("deliveries").doc(deliveryId).update({
-      "processing.status": "processing_releases",
-      "processing.processingStartedAt": admin.firestore.FieldValue.serverTimestamp()
-    });
-    
-    const processedReleases = [];
-    const releases = Array.isArray(releaseData) ? releaseData : [releaseData];
-    
     for (const release of releases) {
       const releaseId = release.ReleaseId?.GRid || generateReleaseId();
       
@@ -47,7 +31,7 @@ exports.processRelease = onMessagePublished({
       const releaseDoc = {
         id: releaseId,
         messageId: release.ReleaseReference,
-        sender: deliveryId.split("_")[0],
+        sender: deliveryData.sender,
         
         metadata: {
           title: extractTitle(release),
@@ -66,14 +50,14 @@ exports.processRelease = onMessagePublished({
           territories: extractTerritories(release),
           startDate: parseDate(release.GlobalReleaseDate),
           endDate: parseDate(release.GlobalEndDate),
-          tier: "all" // Default tier
+          tier: "all"
         },
         
         ingestion: {
           deliveryId,
-          receivedAt: admin.firestore.FieldValue.serverTimestamp(),
+          receivedAt: deliveryData.processing?.receivedAt || admin.firestore.FieldValue.serverTimestamp(),
           processedAt: admin.firestore.FieldValue.serverTimestamp(),
-          ernVersion: ernVersion || "ERN-3.8.2"
+          ernVersion: deliveryData.ern?.version || "ERN-3.8.2"
         },
         
         stats: {
@@ -88,13 +72,16 @@ exports.processRelease = onMessagePublished({
       await db.collection("releases").doc(releaseId).set(releaseDoc);
       
       // Process tracks
-      const tracks = await processTracks(release, releaseId, deliveryPath);
+      const tracks = await processTracks(release, releaseId, deliveryData);
       
       // Process artwork
-      const artwork = await processArtwork(release, releaseId, deliveryPath);
+      const artwork = await processArtwork(release, releaseId, deliveryData);
       
       // Create or update artist profiles
       await processArtists(release, releaseId);
+      
+      // Create album document
+      await createAlbum(releaseDoc, tracks, artwork);
       
       // Update release with processed assets
       await db.collection("releases").doc(releaseId).update({
@@ -117,66 +104,41 @@ exports.processRelease = onMessagePublished({
       logger.log(`Release processed successfully: ${releaseId}`);
     }
     
-    // Update delivery status
-    await db.collection("deliveries").doc(deliveryId).update({
-      "processing.status": "completed",
-      "processing.completedAt": admin.firestore.FieldValue.serverTimestamp(),
-      "processing.releases": processedReleases,
-      "processing.totalReleases": processedReleases.length,
-      "processing.totalTracks": processedReleases.reduce((sum, r) => sum + r.trackCount, 0)
-    });
-    
-    // Trigger acknowledgment
-    const ackTopic = pubsub.topic("send-acknowledgment");
-    await ackTopic.publishMessage({
-      json: {
-        deliveryId,
-        releases: processedReleases
-      }
-    });
-    
-    logger.log(`Successfully processed ${processedReleases.length} releases for delivery: ${deliveryId}`);
-    return { success: true, releases: processedReleases };
+    return processedReleases;
     
   } catch (error) {
-    logger.error("Processing failed:", error);
-    
-    await db.collection("deliveries").doc(deliveryId).update({
-      "processing.status": "processing_failed",
-      "processing.error": error.message,
-      "processing.errorDetails": error.stack,
-      "processing.failedAt": admin.firestore.FieldValue.serverTimestamp()
-    });
-    
-    // Log error notification
-    await db.collection("notifications").add({
-      type: "processing_error",
-      deliveryId,
-      distributorId: deliveryId.split("_")[0],
-      error: error.message,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      read: false
-    });
-    
+    logger.error("Release processing failed:", error);
     throw error;
   }
-});
+}
 
 // Process individual tracks
-async function processTracks(release, releaseId, deliveryPath) {
+async function processTracks(release, releaseId, deliveryData) {
   const tracks = [];
-  const soundRecordings = release.ResourceList?.SoundRecording || [];
+  const soundRecordings = release.ResourceList?.SoundRecording || release.ResourceList?.soundRecording || [];
   
-  for (let index = 0; index < soundRecordings.length; index++) {
-    const recording = soundRecordings[index];
+  // If ResourceList is at root level, use it
+  const resourceList = release.ResourceList || deliveryData.parsedData?.resourceList || {};
+  const allSoundRecordings = resourceList.SoundRecording || resourceList.soundRecording || soundRecordings;
+  
+  for (let index = 0; index < allSoundRecordings.length; index++) {
+    const recording = allSoundRecordings[index];
     const trackId = recording.SoundRecordingId?.ISRC || `${releaseId}_TRACK_${index + 1}`;
     
-    // Process audio file path
-    const audioUrl = await processAudioFile(
-      recording.TechnicalDetails?.File,
-      trackId,
-      deliveryPath
-    );
+    // Get audio file URL from transferred files if available
+    let audioUrl = null;
+    if (deliveryData.files?.transferred?.audio) {
+      // Try to match by index or filename
+      const audioFile = deliveryData.files.transferred.audio[index];
+      if (audioFile) {
+        audioUrl = audioFile.publicUrl;
+      }
+    }
+    
+    // Fallback to generating URL
+    if (!audioUrl) {
+      audioUrl = await getPublicUrl(`audio/original/${trackId}/audio.mp3`);
+    }
     
     const track = {
       id: trackId,
@@ -185,12 +147,12 @@ async function processTracks(release, releaseId, deliveryPath) {
       
       metadata: {
         title: recording.ReferenceTitle?.TitleText || recording.Title?.TitleText || `Track ${index + 1}`,
-        displayArtist: extractRecordingArtist(recording),
+        displayArtist: extractRecordingArtist(recording) || extractArtist(release),
         duration: parseDuration(recording.Duration),
         trackNumber: recording.SequenceNumber || index + 1,
         discNumber: recording.DiscNumber || 1,
         contributors: extractContributors(recording),
-        genre: extractRecordingGenres(recording),
+        genre: extractRecordingGenres(recording) || extractGenres(release),
         language: recording.Language || null,
         explicit: recording.ParentalWarningType === "Explicit"
       },
@@ -227,17 +189,6 @@ async function processTracks(release, releaseId, deliveryPath) {
     await db.collection("tracks").doc(track.id).set(track);
     tracks.push(track);
     
-    // Queue for transcoding
-    const transcodeTopic = pubsub.topic("audio-transcoding");
-    await transcodeTopic.publishMessage({
-      json: {
-        trackId: track.id,
-        audioUrl: audioUrl,
-        format: track.audio.format,
-        isrc: track.isrc
-      }
-    });
-    
     logger.log(`Track processed: ${track.id} - ${track.metadata.title}`);
   }
   
@@ -245,23 +196,36 @@ async function processTracks(release, releaseId, deliveryPath) {
 }
 
 // Process artwork
-async function processArtwork(release, releaseId, deliveryPath) {
-  const images = release.ResourceList?.Image || [];
+async function processArtwork(release, releaseId, deliveryData) {
+  const images = release.ResourceList?.Image || release.ResourceList?.image || [];
+  const resourceList = release.ResourceList || deliveryData.parsedData?.resourceList || {};
+  const allImages = resourceList.Image || resourceList.image || images;
+  
   const artwork = {
     coverArt: null,
     additional: []
   };
   
-  for (const image of images) {
-    const imageUrl = await processImageFile(
-      image.TechnicalDetails?.File,
-      releaseId,
-      image.ImageType,
-      deliveryPath
-    );
+  for (let index = 0; index < allImages.length; index++) {
+    const image = allImages[index];
+    
+    // Get image file URL from transferred files if available
+    let imageUrl = null;
+    if (deliveryData.files?.transferred?.images) {
+      const imageFile = deliveryData.files.transferred.images[index];
+      if (imageFile) {
+        imageUrl = imageFile.publicUrl;
+      }
+    }
+    
+    // Fallback to generating URL
+    if (!imageUrl) {
+      const imageType = image.ImageType || 'cover';
+      imageUrl = await getPublicUrl(`images/artwork/${releaseId}/${imageType}.jpg`);
+    }
     
     const imageDoc = {
-      type: image.ImageType,
+      type: image.ImageType || 'Unknown',
       url: imageUrl,
       width: image.TechnicalDetails?.Width || null,
       height: image.TechnicalDetails?.Height || null,
@@ -293,6 +257,49 @@ async function processArtwork(release, releaseId, deliveryPath) {
   }
   
   return artwork;
+}
+
+// Create album document for catalog browsing
+async function createAlbum(releaseDoc, tracks, artwork) {
+  const albumId = releaseDoc.id;
+  
+  const albumDoc = {
+    id: albumId,
+    releaseId: releaseDoc.id,
+    
+    metadata: {
+      title: releaseDoc.metadata.title,
+      displayArtist: releaseDoc.metadata.displayArtist,
+      type: releaseDoc.metadata.releaseType || 'Album',
+      releaseDate: releaseDoc.metadata.releaseDate,
+      label: releaseDoc.metadata.label,
+      upc: releaseDoc.metadata.upc,
+      genre: releaseDoc.metadata.genre
+    },
+    
+    artwork: {
+      cover: artwork.coverArt,
+      additional: artwork.additional,
+      palette: null // Could extract colors here
+    },
+    
+    trackIds: tracks.map(t => t.id),
+    trackCount: tracks.length,
+    totalDuration: tracks.reduce((sum, t) => sum + (t.metadata.duration || 0), 0),
+    
+    stats: {
+      playCount: 0,
+      savedCount: 0
+    },
+    
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+  };
+  
+  await db.collection("albums").doc(albumId).set(albumDoc);
+  logger.log(`Album created: ${albumId} - ${albumDoc.metadata.title}`);
+  
+  return albumDoc;
 }
 
 // Process and create/update artist profiles
@@ -358,57 +365,15 @@ async function processArtists(release, releaseId) {
   }
 }
 
-// Helper function to process audio file
-async function processAudioFile(fileInfo, trackId, deliveryPath) {
-  const fileName = fileInfo?.FileName || fileInfo || `${trackId}.mp3`;
-  const storagePath = `audio/original/${trackId}/${fileName}`;
-  
-  // In production, copy file from delivery bucket to permanent location
-  // For now, generate the Firebase Storage URL
-  const url = await getPublicUrl(storagePath);
-  
-  logger.log(`Audio file path generated: ${storagePath}`);
-  return url;
-}
-
-// Helper function to process image file
-async function processImageFile(fileInfo, releaseId, imageType, deliveryPath) {
-  const fileName = fileInfo?.FileName || fileInfo || `${imageType}.jpg`;
-  const storagePath = `images/artwork/${releaseId}/${fileName}`;
-  
-  // In production, copy file from delivery bucket to permanent location
-  // For now, generate the Firebase Storage URL
-  const url = await getPublicUrl(storagePath);
-  
-  logger.log(`Image file path generated: ${storagePath}`);
-  return url;
-}
+// Helper functions
 
 // Generate public URL for Firebase Storage
 async function getPublicUrl(filePath) {
-  // Firebase Storage public URL format
   const encodedPath = encodeURIComponent(filePath);
   return `https://firebasestorage.googleapis.com/v0/b/${STORAGE_BUCKET}/o/${encodedPath}?alt=media`;
 }
 
-// Generate Firebase Storage download URL (with token)
-async function getSignedUrl(filePath) {
-  try {
-    const file = storage.bucket(STORAGE_BUCKET).file(filePath);
-    const [url] = await file.getSignedUrl({
-      action: 'read',
-      expires: Date.now() + 365 * 24 * 60 * 60 * 1000 // 1 year
-    });
-    return url;
-  } catch (error) {
-    logger.warn(`Could not generate signed URL for ${filePath}:`, error);
-    return getPublicUrl(filePath);
-  }
-}
-
 function generateImageSizeUrls(originalUrl, releaseId) {
-  // In production, this would trigger image resizing
-  // For now, return variations of the same URL
   const basePath = originalUrl.split('?')[0];
   const baseStoragePath = basePath.replace(
     `https://firebasestorage.googleapis.com/v0/b/${STORAGE_BUCKET}/o/`,
@@ -429,7 +394,6 @@ function generateReleaseId() {
 }
 
 function generateArtistId(artistName) {
-  // Create URL-safe artist ID from name
   return artistName
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
@@ -452,7 +416,7 @@ function extractRecordingArtist(recording) {
   return recording.DisplayArtist?.PartyName?.FullName || 
          recording.DisplayArtist?.Name || 
          recording.MainArtist?.Name ||
-         "Unknown Artist";
+         null;
 }
 
 function extractLabel(release) {
@@ -549,8 +513,6 @@ function parseDate(dateStr) {
 function parseDuration(duration) {
   if (!duration) return 0;
   
-  // Handle different duration formats
-  
   // ISO 8601 duration (PT3M45S)
   const isoMatch = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?/);
   if (isoMatch) {
@@ -586,3 +548,6 @@ function parseDuration(duration) {
   logger.warn(`Unknown duration format: ${duration}`);
   return 0;
 }
+
+// Export the direct function
+module.exports = { processReleases };

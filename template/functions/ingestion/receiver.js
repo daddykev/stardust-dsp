@@ -1,102 +1,342 @@
 // functions/ingestion/receiver.js
-const { onObjectFinalized } = require("firebase-functions/v2/storage");
 const { logger } = require("firebase-functions");
 const admin = require("firebase-admin");
-const { Storage } = require("@google-cloud/storage");
-const { PubSub } = require("@google-cloud/pubsub");
-const path = require("path");
 
 const db = admin.firestore();
-const storage = new Storage();
-const pubsub = new PubSub();
-
-// Firebase Storage bucket name
-const STORAGE_BUCKET = "stardust-dsp.firebasestorage.app";
 
 /**
- * Cloud Function triggered when a delivery package is uploaded
- * Expects deliveries in format: /deliveries/{distributorId}/{timestamp}/manifest.xml
+ * Receiver module for direct pipeline
+ * Handles delivery reception and initial processing
+ * Storage trigger removed - using HTTP endpoint instead
  */
-exports.processDelivery = onObjectFinalized({
-  bucket: STORAGE_BUCKET, // Use the correct bucket
-  maxInstances: 10,
-  timeoutSeconds: 300,
-  memory: "512MiB"
-}, async (event) => {
-  const filePath = event.data.name;
-  const bucket = storage.bucket(event.data.bucket);
+
+/**
+ * Validate incoming delivery
+ */
+async function validateDelivery(deliveryData) {
+  const errors = [];
   
-  // Only process manifest.xml files in deliveries folder
-  if (!filePath.includes("deliveries/") || !filePath.endsWith("manifest.xml")) {
-    logger.log(`Skipping non-manifest file: ${filePath}`);
+  // Check required fields
+  if (!deliveryData.distributorId) {
+    errors.push("Missing distributorId");
+  }
+  
+  if (!deliveryData.ernXml && !deliveryData.ern) {
+    errors.push("Missing ERN data");
+  }
+  
+  if (!deliveryData.messageId) {
+    logger.warn("No messageId provided, will generate one");
+  }
+  
+  return {
+    valid: errors.length === 0,
+    errors: errors
+  };
+}
+
+/**
+ * Verify distributor exists and is authorized
+ */
+async function verifyDistributor(distributorId, authHeader) {
+  try {
+    const distributorDoc = await db.collection('distributors').doc(distributorId).get();
+    
+    if (!distributorDoc.exists) {
+      // Auto-create for development/testing
+      logger.log(`Auto-creating distributor: ${distributorId}`);
+      
+      const newDistributor = {
+        id: distributorId,
+        name: `Distributor ${distributorId}`,
+        active: true,
+        autoProcess: true,
+        sendAcknowledgments: true,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        deliveryProtocol: 'API'
+      };
+      
+      await db.collection('distributors').doc(distributorId).set(newDistributor);
+      return { valid: true, distributor: newDistributor };
+    }
+    
+    const distributor = distributorDoc.data();
+    
+    // Check if distributor is active
+    if (!distributor.active) {
+      return { 
+        valid: false, 
+        error: "Distributor is inactive",
+        distributor: distributor 
+      };
+    }
+    
+    // Validate API key if configured
+    if (distributor.apiKey && authHeader) {
+      const providedKey = authHeader.replace('Bearer ', '');
+      if (distributor.apiKey !== providedKey) {
+        return { 
+          valid: false, 
+          error: "Invalid API key",
+          distributor: null 
+        };
+      }
+    }
+    
+    return { valid: true, distributor: distributor };
+    
+  } catch (error) {
+    logger.error("Error verifying distributor:", error);
+    return { 
+      valid: false, 
+      error: error.message,
+      distributor: null 
+    };
+  }
+}
+
+/**
+ * Create delivery record in Firestore
+ */
+async function createDeliveryRecord(deliveryData, distributor) {
+  const now = admin.firestore.Timestamp.now();
+  const deliveryId = generateDeliveryId(deliveryData.distributorId, deliveryData.messageId);
+  
+  const delivery = {
+    id: deliveryId,
+    sender: deliveryData.distributorId,
+    senderName: distributor.name || deliveryData.distributorId,
+    
+    // ERN data
+    ern: deliveryData.ern || {
+      messageId: deliveryData.messageId || deliveryId,
+      version: '4.3',
+      releaseCount: 1
+    },
+    
+    // Core metadata
+    messageId: deliveryData.messageId || deliveryId,
+    releaseTitle: deliveryData.releaseTitle || 'Unknown Release',
+    releaseArtist: deliveryData.releaseArtist || 'Unknown Artist',
+    ernXml: deliveryData.ernXml,
+    
+    // Processing status
+    processing: {
+      receivedAt: now,
+      status: 'received',
+      locked: false,
+      priority: deliveryData.priority || 'normal'
+    },
+    
+    // File references
+    audioFiles: deliveryData.audioFiles || [],
+    imageFiles: deliveryData.imageFiles || [],
+    
+    // Metadata
+    testMode: deliveryData.testMode || false,
+    source: deliveryData.source || 'API',
+    
+    // Timestamps
+    createdAt: now,
+    updatedAt: now
+  };
+  
+  await db.collection('deliveries').doc(deliveryId).set(delivery);
+  
+  logger.log(`Delivery record created: ${deliveryId}`);
+  return { deliveryId, delivery };
+}
+
+/**
+ * Queue delivery for processing
+ */
+async function queueForProcessing(deliveryId, distributor) {
+  const updates = {
+    'processing.status': 'pending',
+    'processing.queuedAt': admin.firestore.FieldValue.serverTimestamp()
+  };
+  
+  // Set priority based on distributor settings
+  if (distributor.priority) {
+    updates['processing.priority'] = distributor.priority;
+  }
+  
+  await db.collection('deliveries').doc(deliveryId).update(updates);
+  
+  logger.log(`Delivery ${deliveryId} queued for processing`);
+}
+
+/**
+ * Create file transfer job if needed
+ */
+async function createFileTransferJob(deliveryId, distributorId, audioFiles, imageFiles) {
+  if (!audioFiles?.length && !imageFiles?.length) {
     return null;
   }
   
-  logger.log(`Processing delivery: ${filePath}`);
+  const transferJob = {
+    deliveryId: deliveryId,
+    distributorId: distributorId,
+    audioFiles: audioFiles || [],
+    imageFiles: imageFiles || [],
+    status: 'pending',
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    retryCount: 0
+  };
   
-  // Extract metadata from path
-  const pathParts = filePath.split("/");
-  const distributorId = pathParts[1];
-  const timestamp = pathParts[2];
-  const deliveryId = `${distributorId}_${timestamp}`;
+  await db.collection('fileTransfers').doc(deliveryId).set(transferJob);
   
+  logger.log(`File transfer job created for ${deliveryId}: ${audioFiles?.length || 0} audio, ${imageFiles?.length || 0} image files`);
+  return transferJob;
+}
+
+/**
+ * Generate delivery ID
+ */
+function generateDeliveryId(distributorId, messageId) {
+  if (messageId) {
+    // Use message ID if provided
+    return `${distributorId}_${messageId}`;
+  }
+  // Generate timestamp-based ID
+  return `${distributorId}_${Date.now()}`;
+}
+
+/**
+ * Process incoming delivery (main entry point for direct pipeline)
+ */
+async function processIncomingDelivery(deliveryData, authHeader) {
   try {
-    // Create delivery record
-    const deliveryRef = db.collection("deliveries").doc(deliveryId);
-    await deliveryRef.set({
-      id: deliveryId,
-      sender: distributorId,
-      package: {
-        originalPath: filePath,
-        size: parseInt(event.data.size),
-        contentType: event.data.contentType,
-        timeCreated: event.data.timeCreated
-      },
-      processing: {
-        receivedAt: admin.firestore.FieldValue.serverTimestamp(),
-        status: "pending"
-      }
-    });
+    // Step 1: Validate delivery data
+    const validation = await validateDelivery(deliveryData);
+    if (!validation.valid) {
+      throw new Error(`Invalid delivery: ${validation.errors.join(', ')}`);
+    }
     
-    // Trigger processing pipeline via Pub/Sub
-    const topic = pubsub.topic("ern-processing");
-    await topic.publishMessage({
-      json: {
-        deliveryId,
-        manifestPath: filePath,
-        bucket: event.data.bucket
-      }
-    });
+    // Step 2: Verify distributor
+    const distributorCheck = await verifyDistributor(deliveryData.distributorId, authHeader);
+    if (!distributorCheck.valid) {
+      throw new Error(distributorCheck.error);
+    }
     
-    logger.log(`Delivery ${deliveryId} queued for processing`);
-    return { success: true, deliveryId };
+    // Step 3: Create delivery record
+    const { deliveryId, delivery } = await createDeliveryRecord(deliveryData, distributorCheck.distributor);
+    
+    // Step 4: Create file transfer job if needed
+    if (deliveryData.audioFiles?.length > 0 || deliveryData.imageFiles?.length > 0) {
+      await createFileTransferJob(
+        deliveryId, 
+        deliveryData.distributorId,
+        deliveryData.audioFiles,
+        deliveryData.imageFiles
+      );
+    }
+    
+    // Step 5: Queue for processing if auto-process enabled
+    if (distributorCheck.distributor.autoProcess) {
+      await queueForProcessing(deliveryId, distributorCheck.distributor);
+    }
+    
+    // Step 6: Send notification
+    if (distributorCheck.distributor.sendAcknowledgments) {
+      const { sendNotification } = require('./notifier');
+      await sendNotification('delivery_received', {
+        distributorId: deliveryData.distributorId,
+        deliveryId: deliveryId,
+        message: `New delivery received: ${delivery.releaseTitle}`
+      });
+    }
+    
+    return {
+      success: true,
+      deliveryId: deliveryId,
+      messageId: delivery.messageId,
+      autoProcess: distributorCheck.distributor.autoProcess,
+      fileTransferQueued: (deliveryData.audioFiles?.length > 0 || deliveryData.imageFiles?.length > 0)
+    };
     
   } catch (error) {
-    logger.error("Delivery processing failed:", error);
-    
-    // Update delivery status
-    await db.collection("deliveries").doc(deliveryId).update({
-      "processing.status": "failed",
-      "processing.error": error.message,
-      "processing.failedAt": admin.firestore.FieldValue.serverTimestamp()
-    });
-    
-    // Send notification
-    await notifyDeliveryError(distributorId, deliveryId, error);
-    
+    logger.error("Error processing incoming delivery:", error);
     throw error;
   }
-});
-
-async function notifyDeliveryError(distributorId, deliveryId, error) {
-  // Publish error notification
-  const topic = pubsub.topic("delivery-errors");
-  await topic.publishMessage({
-    json: {
-      distributorId,
-      deliveryId,
-      error: error.message,
-      timestamp: new Date().toISOString()
-    }
-  });
 }
+
+/**
+ * Get delivery status
+ */
+async function getDeliveryStatus(deliveryId) {
+  try {
+    const deliveryDoc = await db.collection('deliveries').doc(deliveryId).get();
+    
+    if (!deliveryDoc.exists) {
+      return { found: false };
+    }
+    
+    const delivery = deliveryDoc.data();
+    
+    // Check file transfer status if applicable
+    let fileTransferStatus = null;
+    if (delivery.audioFiles?.length > 0 || delivery.imageFiles?.length > 0) {
+      const transferDoc = await db.collection('fileTransfers').doc(deliveryId).get();
+      if (transferDoc.exists) {
+        fileTransferStatus = transferDoc.data().status;
+      }
+    }
+    
+    return {
+      found: true,
+      deliveryId: deliveryId,
+      status: delivery.processing?.status,
+      fileTransferStatus: fileTransferStatus,
+      receivedAt: delivery.processing?.receivedAt,
+      completedAt: delivery.processing?.completedAt,
+      error: delivery.processing?.error,
+      releases: delivery.processing?.releases || []
+    };
+    
+  } catch (error) {
+    logger.error("Error getting delivery status:", error);
+    throw error;
+  }
+}
+
+/**
+ * Cancel delivery processing
+ */
+async function cancelDelivery(deliveryId) {
+  try {
+    await db.collection('deliveries').doc(deliveryId).update({
+      'processing.status': 'cancelled',
+      'processing.cancelledAt': admin.firestore.FieldValue.serverTimestamp()
+    });
+    
+    // Also cancel file transfer if exists
+    const transferDoc = await db.collection('fileTransfers').doc(deliveryId).get();
+    if (transferDoc.exists) {
+      await transferDoc.ref.update({
+        status: 'cancelled',
+        cancelledAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+    }
+    
+    logger.log(`Delivery ${deliveryId} cancelled`);
+    return { success: true };
+    
+  } catch (error) {
+    logger.error("Error cancelling delivery:", error);
+    throw error;
+  }
+}
+
+// Export all functions
+module.exports = {
+  processIncomingDelivery,
+  validateDelivery,
+  verifyDistributor,
+  createDeliveryRecord,
+  queueForProcessing,
+  createFileTransferJob,
+  getDeliveryStatus,
+  cancelDelivery,
+  generateDeliveryId
+};

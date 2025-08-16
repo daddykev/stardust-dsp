@@ -1,39 +1,25 @@
 // functions/ingestion/parser.js
-const { onMessagePublished } = require("firebase-functions/v2/pubsub");
 const { logger } = require("firebase-functions");
 const admin = require("firebase-admin");
 const xml2js = require("xml2js");
 const { Storage } = require("@google-cloud/storage");
-const { PubSub } = require("@google-cloud/pubsub");
 
 const db = admin.firestore();
 const storage = new Storage();
-const pubsub = new PubSub();
 
 /**
  * Parse ERN XML and extract release information
+ * Direct function - no longer Pub/Sub triggered
  */
-exports.parseERN = onMessagePublished({
-  topic: "ern-processing",
-  timeoutSeconds: 300,
-  memory: "1GiB",
-  maxInstances: 5
-}, async (event) => {
-  const { deliveryId, manifestPath, bucket } = event.data.message.json;
-  
+async function parseERN(deliveryId, ernXml) {
   logger.log(`Parsing ERN for delivery: ${deliveryId}`);
   
   try {
     // Update status
     await db.collection("deliveries").doc(deliveryId).update({
       "processing.status": "parsing",
-      "processing.startedAt": admin.firestore.FieldValue.serverTimestamp()
+      "processing.parsedAt": admin.firestore.FieldValue.serverTimestamp()
     });
-    
-    // Download and parse manifest
-    const bucketObj = storage.bucket(bucket);
-    const file = bucketObj.file(manifestPath);
-    const [content] = await file.download();
     
     // Parse XML
     const parser = new xml2js.Parser({
@@ -42,11 +28,14 @@ exports.parseERN = onMessagePublished({
       tagNameProcessors: [xml2js.processors.stripPrefix]
     });
     
-    const ernData = await parser.parseStringPromise(content.toString());
+    const ernData = await parser.parseStringPromise(ernXml);
     
     // Extract ERN version and profile
     const ernVersion = detectERNVersion(ernData);
     const ernProfile = detectERNProfile(ernData);
+    
+    // Extract releases
+    const releases = extractReleases(ernData);
     
     // Store parsed data
     await db.collection("deliveries").doc(deliveryId).update({
@@ -59,26 +48,23 @@ exports.parseERN = onMessagePublished({
           partyId: ernData.MessageHeader?.MessageSender?.PartyId,
           partyName: ernData.MessageHeader?.MessageSender?.PartyName?.FullName
         },
-        releaseCount: Array.isArray(ernData.ReleaseList?.Release) 
-          ? ernData.ReleaseList.Release.length 
-          : 1
+        releaseCount: releases.length
+      },
+      parsedData: {
+        releases: releases,
+        resourceList: ernData.ResourceList,
+        dealList: ernData.DealList
       },
       "processing.parsedAt": admin.firestore.FieldValue.serverTimestamp()
     });
     
-    // Trigger validation
-    const validationTopic = pubsub.topic("ern-validation");
-    await validationTopic.publishMessage({
-      json: {
-        deliveryId,
-        ernData,
-        ernVersion,
-        manifestPath
-      }
-    });
-    
     logger.log(`ERN parsed successfully for delivery: ${deliveryId}`);
-    return { success: true, releases: ernData.ReleaseList?.Release };
+    return { 
+      success: true, 
+      releases: releases,
+      ernData: ernData,
+      ernVersion: ernVersion
+    };
     
   } catch (error) {
     logger.error("ERN parsing failed:", error);
@@ -86,12 +72,13 @@ exports.parseERN = onMessagePublished({
     await db.collection("deliveries").doc(deliveryId).update({
       "processing.status": "parse_failed",
       "processing.error": error.message,
+      "processing.errorDetails": error.stack,
       "processing.failedAt": admin.firestore.FieldValue.serverTimestamp()
     });
     
     throw error;
   }
-});
+}
 
 function detectERNVersion(ernData) {
   // Check for version indicators
@@ -111,3 +98,32 @@ function detectERNProfile(ernData) {
   }
   return "AudioAlbumMusicOnly"; // Default profile
 }
+
+function extractReleases(ernData) {
+  // Handle different ERN structures
+  let releases = [];
+  
+  if (ernData.ReleaseList?.Release) {
+    releases = Array.isArray(ernData.ReleaseList.Release) 
+      ? ernData.ReleaseList.Release 
+      : [ernData.ReleaseList.Release];
+  } else if (ernData.NewReleaseMessage?.ReleaseList?.Release) {
+    releases = Array.isArray(ernData.NewReleaseMessage.ReleaseList.Release)
+      ? ernData.NewReleaseMessage.ReleaseList.Release
+      : [ernData.NewReleaseMessage.ReleaseList.Release];
+  }
+  
+  return releases.map(release => ({
+    ReleaseId: release.ReleaseId,
+    ReleaseReference: release.ReleaseReference,
+    ReleaseType: release.ReleaseType,
+    ReleaseDetailsByTerritory: release.ReleaseDetailsByTerritory,
+    ReferenceTitle: release.ReferenceTitle,
+    ReleaseResourceReferenceList: release.ReleaseResourceReferenceList,
+    ResourceList: ernData.ResourceList,
+    GlobalReleaseDate: release.GlobalReleaseDate,
+    GlobalOriginalReleaseDate: release.GlobalOriginalReleaseDate
+  }));
+}
+
+module.exports = { parseERN };

@@ -3,27 +3,115 @@ service firebase.storage {
   match /b/{bucket}/o {
     // DEVELOPMENT RULES - More permissive for testing
     
-    // Deliveries folder - for receiving from distributors
-    match /deliveries/{allPaths=**} {
-      // Allow authenticated users to read/write deliveries
-      allow read, write: if request.auth != null;
+    // ============================================
+    // DELIVERIES - Ingestion from distributors
+    // ============================================
+    
+    // Deliveries folder structure:
+    // /deliveries/{distributorId}/{deliveryId}/audio/{files}
+    // /deliveries/{distributorId}/{deliveryId}/images/{files}
+    // /deliveries/{distributorId}/{deliveryId}/manifest.xml
+    match /deliveries/{distributorId}/{deliveryId}/{allPaths=**} {
+      // Allow authenticated users to read deliveries
+      allow read: if request.auth != null;
+      // Only allow write from Cloud Functions or authenticated distributors
+      allow write: if request.auth != null;
+      // In production, you might want:
+      // allow write: if request.auth != null && 
+      //   (request.auth.uid == distributorId || 
+      //    request.auth.token.admin == true);
     }
     
+    // Legacy deliveries path (for backward compatibility)
+    match /deliveries/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+    
+    // ============================================
+    // PUBLIC CONTENT - For streaming/display
+    // ============================================
+    
     // Audio files - public read for streaming
+    // These are processed/transcoded versions for public consumption
     match /audio/{allPaths=**} {
       allow read: if true;  // Public streaming
       allow write: if request.auth != null;
+      // In production: allow write: if false; // Only Cloud Functions
+    }
+    
+    // Original audio files (high quality masters)
+    match /audio/original/{allPaths=**} {
+      allow read: if request.auth != null; // Authenticated users only
+      allow write: if request.auth != null;
+      // In production: allow write: if false; // Only Cloud Functions
+    }
+    
+    // HLS/DASH streaming manifests
+    match /audio/streaming/{format}/{trackId}/{allPaths=**} {
+      allow read: if true; // Public streaming
+      allow write: if request.auth != null;
+      // In production: allow write: if false; // Only Cloud Functions
     }
     
     // Images - public read for artwork
     match /images/{allPaths=**} {
       allow read: if true;  // Public images
       allow write: if request.auth != null;
+      // In production: allow write: if false; // Only Cloud Functions
     }
+    
+    // Artwork with different sizes
+    match /images/artwork/{releaseId}/{size}/{fileName} {
+      allow read: if true; // Public access
+      allow write: if request.auth != null;
+      // In production: allow write: if false; // Only Cloud Functions
+    }
+    
+    // ============================================
+    // USER CONTENT - Private user data
+    // ============================================
+    
+    // User uploads (avatars, playlist covers, etc.)
+    match /users/{userId}/{allPaths=**} {
+      allow read: if request.auth != null && 
+        (request.auth.uid == userId || resource.metadata.public == 'true');
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // ============================================
+    // SYSTEM FILES - Restricted access
+    // ============================================
+    
+    // Temporary processing files
+    match /temp/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+      // These should be auto-deleted after processing
+    }
+    
+    // Backup files (admin only)
+    match /backups/{allPaths=**} {
+      allow read: if request.auth != null && request.auth.token.admin == true;
+      allow write: if false; // Only Cloud Functions/backend
+    }
+    
+    // Reports and exports
+    match /reports/{reportType}/{reportId}/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+      // In production: check if user has access to this report
+    }
+    
+    // ============================================
+    // DEFAULT RULE - Catch all
+    // ============================================
     
     // Everything else requires authentication
     match /{allPaths=**} {
-      allow read, write: if request.auth != null;
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+      // In production: allow read, write: if false;
     }
   }
 }

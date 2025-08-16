@@ -97,6 +97,34 @@ service cloud.firestore {
       allow delete: if false;
     }
     
+    // File transfer collection (new)
+    match /fileTransfers/{transferId} {
+      allow read: if isAdmin() || isIndustryUser();
+      allow write: if false; // Only Cloud Functions can write
+    }
+    
+    // Acknowledgments collection (new)
+    match /acknowledgments/{acknowledgmentId} {
+      allow read: if isIndustryUser() || isAdmin();
+      allow write: if false; // Only Cloud Functions can write
+    }
+    
+    // Notifications collection (new)
+    match /notifications/{notificationId} {
+      // Users can read their own notifications
+      allow read: if isAuthenticated() && 
+        (isAdmin() || 
+         resource.data.distributorId == request.auth.uid ||
+         resource.data.userId == request.auth.uid);
+      // Users can mark their own notifications as read
+      allow update: if isAuthenticated() && 
+        (resource.data.distributorId == request.auth.uid ||
+         resource.data.userId == request.auth.uid) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readAt']);
+      allow create: if false; // Only Cloud Functions can create
+      allow delete: if isAdmin(); // Only admins can delete
+    }
+    
     match /reports/{reportId} {
       allow read: if isIndustryUser() || isAdmin();
       allow write: if isAdmin();

@@ -98,6 +98,14 @@
                 <div class="step-content">
                   <h4>{{ step.label }}</h4>
                   <p class="step-time">{{ step.time }}</p>
+                  <div v-if="step.details" class="step-details">
+                    <span v-if="step.details.audioTransferred !== undefined">
+                      Audio: {{ step.details.audioTransferred }} files
+                    </span>
+                    <span v-if="step.details.imageTransferred !== undefined">
+                      Images: {{ step.details.imageTransferred }} files
+                    </span>
+                  </div>
                   <p v-if="step.error" class="step-error">
                     <font-awesome-icon icon="exclamation-triangle" />
                     {{ step.error }}
@@ -188,6 +196,130 @@
                   <label>Processing Time</label>
                   <span>{{ getProcessingTime() }}</span>
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- File Transfer Information -->
+        <div v-if="delivery.files || delivery.audioFiles?.length || delivery.imageFiles?.length" class="card">
+          <div class="card-header">
+            <h3>File Transfer Information</h3>
+            <span v-if="delivery.files?.transferredAt" class="status-badge success">
+              <font-awesome-icon icon="check-circle" />
+              Completed
+            </span>
+            <span v-else-if="delivery.processing?.status === 'waiting_for_files'" class="status-badge processing">
+              <font-awesome-icon icon="cloud-download-alt" spin />
+              Transferring
+            </span>
+          </div>
+          <div class="card-body">
+            <div class="info-list">
+              <!-- Requested Files -->
+              <div class="info-item">
+                <label>Requested Audio Files</label>
+                <span>{{ delivery.audioFiles?.length || 0 }}</span>
+              </div>
+              <div class="info-item">
+                <label>Requested Image Files</label>
+                <span>{{ delivery.imageFiles?.length || 0 }}</span>
+              </div>
+              
+              <!-- Transferred Files -->
+              <div v-if="delivery.files" class="info-item">
+                <label>Transferred Audio Files</label>
+                <span>{{ delivery.files.audioCount || 0 }}</span>
+              </div>
+              <div v-if="delivery.files" class="info-item">
+                <label>Transferred Image Files</label>
+                <span>{{ delivery.files.imageCount || 0 }}</span>
+              </div>
+              
+              <!-- Transfer Time -->
+              <div v-if="delivery.files?.transferredAt" class="info-item">
+                <label>Transfer Completed</label>
+                <span>{{ formatDate(delivery.files.transferredAt) }}</span>
+              </div>
+              
+              <!-- Storage Location -->
+              <div v-if="delivery.files?.transferred" class="info-item">
+                <label>Storage Path</label>
+                <code class="path-text">deliveries/{{ delivery.sender }}/{{ delivery.id }}/</code>
+              </div>
+            </div>
+            
+            <!-- Transferred Files Details -->
+            <div v-if="delivery.files?.transferred" class="transferred-files-details">
+              <h4>Transferred Files</h4>
+              
+              <!-- Audio Files -->
+              <div v-if="delivery.files.transferred.audio?.length > 0" class="file-section">
+                <h5>Audio Files ({{ delivery.files.transferred.audio.length }})</h5>
+                <div class="file-list">
+                  <div v-for="(file, index) in delivery.files.transferred.audio" :key="index" class="file-item">
+                    <font-awesome-icon icon="music" />
+                    <span class="file-name">{{ file.fileName }}</span>
+                    <span class="file-size">{{ formatFileSize(file.size) }}</span>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Image Files -->
+              <div v-if="delivery.files.transferred.images?.length > 0" class="file-section">
+                <h5>Image Files ({{ delivery.files.transferred.images.length }})</h5>
+                <div class="file-list">
+                  <div v-for="(file, index) in delivery.files.transferred.images" :key="index" class="file-item">
+                    <font-awesome-icon icon="image" />
+                    <span class="file-name">{{ file.fileName }}</span>
+                    <span class="file-size">{{ formatFileSize(file.size) }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- File Transfer Job Status -->
+        <div v-if="fileTransferJob" class="card">
+          <div class="card-header">
+            <h3>File Transfer Job</h3>
+            <span class="status-badge" :class="getStatusClass(fileTransferJob.status)">
+              {{ fileTransferJob.status }}
+            </span>
+          </div>
+          <div class="card-body">
+            <div class="info-list">
+              <div class="info-item">
+                <label>Job ID</label>
+                <code>{{ fileTransferJob.id }}</code>
+              </div>
+              <div class="info-item">
+                <label>Status</label>
+                <span>{{ fileTransferJob.status }}</span>
+              </div>
+              <div v-if="fileTransferJob.startedAt" class="info-item">
+                <label>Started</label>
+                <span>{{ formatDate(fileTransferJob.startedAt) }}</span>
+              </div>
+              <div v-if="fileTransferJob.completedAt" class="info-item">
+                <label>Completed</label>
+                <span>{{ formatDate(fileTransferJob.completedAt) }}</span>
+              </div>
+              <div v-if="fileTransferJob.error" class="info-item">
+                <label>Error</label>
+                <span class="text-error">{{ fileTransferJob.error }}</span>
+              </div>
+              <div v-if="fileTransferJob.summary" class="info-item">
+                <label>Summary</label>
+                <span>
+                  Audio: {{ fileTransferJob.summary.audioTransferred }}/{{ fileTransferJob.summary.audioRequested }},
+                  Images: {{ fileTransferJob.summary.imagesTransferred }}/{{ fileTransferJob.summary.imagesRequested }}
+                </span>
+              </div>
+              <div v-if="fileTransferJob.summary?.totalBytesTransferred" class="info-item">
+                <label>Total Transferred</label>
+                <span>{{ formatFileSize(fileTransferJob.summary.totalBytesTransferred) }}</span>
               </div>
             </div>
           </div>
@@ -409,12 +541,14 @@ const router = useRouter()
 // State
 const delivery = ref(null)
 const distributor = ref(null)
+const fileTransferJob = ref(null)
 const isLoading = ref(true)
 const isRefreshing = ref(false)
 const showDebug = ref(false)
 
 // Real-time subscription
 let unsubscribe = null
+let unsubscribeTransfer = null
 
 // Computed
 const distributorName = computed(() => {
@@ -428,7 +562,7 @@ const canReprocess = computed(() => {
 
 const isProcessing = computed(() => {
   const status = delivery.value?.processing?.status
-  return status && ['pending', 'parsing', 'validating', 'processing_releases'].includes(status)
+  return status && ['pending', 'parsing', 'validating', 'processing_releases', 'waiting_for_files'].includes(status)
 })
 
 const processingSteps = computed(() => {
@@ -444,10 +578,25 @@ const processingSteps = computed(() => {
       time: formatDate(delivery.value.processing?.receivedAt)
     },
     {
+      id: 'file_transfer',
+      label: 'File Transfer',
+      icon: 'cloud-download-alt',
+      completed: ['parsing', 'validating', 'processing_releases', 'completed'].includes(status) || 
+                 delivery.value.files?.transferredAt,
+      current: status === 'waiting_for_files',
+      failed: fileTransferJob.value?.status === 'failed',
+      time: formatDate(delivery.value.files?.transferredAt),
+      error: fileTransferJob.value?.error,
+      details: delivery.value.files ? {
+        audioTransferred: delivery.value.files.audioCount || 0,
+        imageTransferred: delivery.value.files.imageCount || 0
+      } : null
+    },
+    {
       id: 'parsing',
       label: 'Parsing ERN',
       icon: 'file-code',
-      completed: ['parsing', 'validating', 'processing_releases', 'completed'].includes(status),
+      completed: ['validating', 'processing_releases', 'completed'].includes(status),
       current: status === 'parsing',
       failed: status === 'parse_failed',
       time: formatDate(delivery.value.processing?.parsedAt),
@@ -457,7 +606,7 @@ const processingSteps = computed(() => {
       id: 'validating',
       label: 'Validating with DDEX Workbench',
       icon: 'check-circle',
-      completed: ['validating', 'processing_releases', 'completed'].includes(status),
+      completed: ['processing_releases', 'completed'].includes(status),
       current: status === 'validating',
       failed: status === 'validation_failed',
       time: formatDate(delivery.value.validation?.validatedAt),
@@ -467,7 +616,7 @@ const processingSteps = computed(() => {
       id: 'processing',
       label: 'Processing Releases',
       icon: 'compact-disc',
-      completed: ['processing_releases', 'completed'].includes(status),
+      completed: status === 'completed',
       current: status === 'processing_releases',
       failed: status === 'processing_failed',
       time: formatDate(delivery.value.processing?.processingStartedAt),
@@ -491,9 +640,10 @@ const progressPercentage = computed(() => {
   const status = delivery.value?.processing?.status
   const percentages = {
     'pending': 10,
-    'parsing': 25,
-    'validating': 50,
-    'processing_releases': 75,
+    'waiting_for_files': 20,
+    'parsing': 40,
+    'validating': 60,
+    'processing_releases': 80,
     'completed': 100
   }
   return percentages[status] || 0
@@ -503,6 +653,7 @@ const currentStepText = computed(() => {
   const status = delivery.value?.processing?.status
   const texts = {
     'pending': 'Queued for processing...',
+    'waiting_for_files': 'Transferring files from distributor...',
     'parsing': 'Parsing ERN XML structure...',
     'validating': 'Validating with DDEX Workbench API...',
     'processing_releases': 'Processing releases and assets...',
@@ -543,10 +694,28 @@ async function loadDelivery() {
   }
 }
 
+// Load file transfer job
+async function loadFileTransferJob() {
+  try {
+    const deliveryId = route.params.id
+    const transferDoc = await getDoc(doc(db, 'fileTransfers', deliveryId))
+    
+    if (transferDoc.exists()) {
+      fileTransferJob.value = {
+        id: transferDoc.id,
+        ...transferDoc.data()
+      }
+    }
+  } catch (error) {
+    console.error('Error loading file transfer job:', error)
+  }
+}
+
 // Refresh delivery
 async function refreshDelivery() {
   isRefreshing.value = true
   await loadDelivery()
+  await loadFileTransferJob()
   setTimeout(() => {
     isRefreshing.value = false
   }, 500)
@@ -691,6 +860,7 @@ function formatFileSize(bytes) {
 
 function formatStatus(status) {
   if (!status) return 'Unknown'
+  if (status === 'waiting_for_files') return 'Transferring Files'
   return status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
 }
 
@@ -699,6 +869,7 @@ function getStatusClass(status) {
   if (status === 'completed') return 'success'
   if (status.includes('failed')) return 'error'
   if (['parsing', 'validating', 'processing_releases'].includes(status)) return 'processing'
+  if (status === 'waiting_for_files') return 'transferring'
   if (status === 'pending') return 'pending'
   return 'default'
 }
@@ -706,6 +877,8 @@ function getStatusClass(status) {
 // Setup real-time subscription
 function setupRealtimeUpdates() {
   const deliveryId = route.params.id
+  
+  // Subscribe to delivery updates
   unsubscribe = onSnapshot(
     doc(db, 'deliveries', deliveryId),
     (doc) => {
@@ -717,15 +890,34 @@ function setupRealtimeUpdates() {
       }
     }
   )
+  
+  // Subscribe to file transfer job updates
+  unsubscribeTransfer = onSnapshot(
+    doc(db, 'fileTransfers', deliveryId),
+    (doc) => {
+      if (doc.exists()) {
+        fileTransferJob.value = {
+          id: doc.id,
+          ...doc.data()
+        }
+      }
+    },
+    (error) => {
+      // File transfer job might not exist, that's ok
+      console.log('No file transfer job for this delivery')
+    }
+  )
 }
 
 onMounted(() => {
   loadDelivery()
+  loadFileTransferJob()
   setupRealtimeUpdates()
 })
 
 onUnmounted(() => {
   if (unsubscribe) unsubscribe()
+  if (unsubscribeTransfer) unsubscribeTransfer()
 })
 </script>
 
@@ -875,6 +1067,14 @@ onUnmounted(() => {
   color: var(--color-text-tertiary);
 }
 
+.step-details {
+  display: flex;
+  gap: var(--space-md);
+  margin-top: var(--space-xs);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
 .step-error {
   margin-top: var(--space-xs);
   padding: var(--space-xs) var(--space-sm);
@@ -973,6 +1173,65 @@ onUnmounted(() => {
   border-radius: var(--radius-full);
   font-size: var(--text-sm);
   font-weight: var(--font-medium);
+}
+
+/* File Transfer Information */
+.transferred-files-details {
+  margin-top: var(--space-lg);
+  padding-top: var(--space-lg);
+  border-top: 1px solid var(--color-border);
+}
+
+.transferred-files-details h4 {
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  margin-bottom: var(--space-md);
+  color: var(--color-heading);
+}
+
+.file-section {
+  margin-bottom: var(--space-lg);
+}
+
+.file-section h5 {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-sm);
+}
+
+.file-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.file-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-xs) var(--space-sm);
+  background-color: var(--color-bg-secondary);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+}
+
+.file-item svg {
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+.file-name {
+  flex: 1;
+  font-family: var(--font-mono);
+  color: var(--color-text);
+  word-break: break-all;
+}
+
+.file-size {
+  color: var(--color-text-tertiary);
+  font-size: var(--text-xs);
+  white-space: nowrap;
 }
 
 /* Validation */
@@ -1234,6 +1493,11 @@ onUnmounted(() => {
   color: white;
 }
 
+.status-badge.transferring {
+  background-color: var(--color-info);
+  color: white;
+}
+
 .status-badge.pending {
   background-color: var(--color-warning);
   color: white;
@@ -1344,6 +1608,10 @@ onUnmounted(() => {
   align-items: center;
 }
 
+.text-error {
+  color: var(--color-error);
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .ingestion-detail-page {
@@ -1384,6 +1652,11 @@ onUnmounted(() => {
   .debug-toggle {
     bottom: var(--space-md);
     right: var(--space-md);
+  }
+  
+  .step-details {
+    flex-direction: column;
+    gap: var(--space-xs);
   }
 }
 </style>

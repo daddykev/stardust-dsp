@@ -87,7 +87,10 @@ import {
   faChevronDown,
   faEllipsisH,
   faBookmark,
-  faHeartBroken
+  faHeartBroken,
+  faTimesCircle,
+  faCloudDownloadAlt,
+  faImage  
 } from '@fortawesome/free-solid-svg-icons'
 
 // Import brand icons
@@ -179,7 +182,10 @@ library.add(
   faChevronDown,
   faEllipsisH,
   faBookmark,
-  faHeartBroken  
+  faHeartBroken,
+  faTimesCircle,
+  faCloudDownloadAlt,
+  faImage  
 )
 
 // Add brand icons to the library
