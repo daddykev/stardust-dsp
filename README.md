@@ -209,10 +209,10 @@ We believe in democratizing music streaming technology. The core platform is and
 ### Install and Deploy (Completely Free)
 ```bash
 # Create your streaming platform
-npx create-stardust-dsp my-streaming-service
+npx stardust-dsp create my-dsp
 
 # Navigate to project
-cd my-streaming-service
+cd my-dsp
 
 # Initialize Firebase (free tier available)
 stardust-dsp init
