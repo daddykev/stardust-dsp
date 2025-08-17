@@ -14,7 +14,7 @@ const WORKBENCH_API = process.env.WORKBENCH_API_URL || "https://ddex-workbench.o
  * API Docs: https://ddex-workbench.org/api
  */
 async function validateERN(deliveryId, ernData, ernVersion) {
-  logger.log(`Validating ERN for delivery: ${deliveryId}`);
+  logger.log(`Validating ERN for delivery: ${deliveryId}, version: ${ernVersion}`);
   
   try {
     // Update status
@@ -23,9 +23,8 @@ async function validateERN(deliveryId, ernData, ernVersion) {
       "processing.validatingAt": admin.firestore.FieldValue.serverTimestamp()
     });
     
-    // For testing/development, use mock validation
-    // In production, uncomment the DDEX Workbench API call below
-    const validation = await mockValidation(ernData, ernVersion);
+    // For testing/development, use improved mock validation
+    const validation = await mockValidation(ernData, ernVersion, deliveryId);
     
     /* Production DDEX Workbench API call:
     const validationResponse = await axios.post(
@@ -33,7 +32,7 @@ async function validateERN(deliveryId, ernData, ernVersion) {
       {
         content: ernData,
         version: ernVersion,
-        profile: "AudioAlbumMusicOnly", // or detect from ERN
+        profile: detectProfile(ernData, ernVersion),
         validateSchema: true,
         validateBusiness: true,
         validateTechnical: true
@@ -57,7 +56,8 @@ async function validateERN(deliveryId, ernData, ernVersion) {
         warnings: validation.warnings || [],
         info: validation.info || [],
         validatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        workbenchVersion: validation.version || "mock"
+        workbenchVersion: validation.version || "mock",
+        ernVersion: ernVersion
       }
     });
     
@@ -72,17 +72,6 @@ async function validateERN(deliveryId, ernData, ernVersion) {
       logger.warn(`Validation failed for delivery: ${deliveryId}`, {
         errors: validation.errors,
         warnings: validation.warnings
-      });
-      
-      // Create notification for validation failure
-      await db.collection("notifications").add({
-        type: "validation_failed",
-        deliveryId: deliveryId,
-        distributorId: (await db.collection("deliveries").doc(deliveryId).get()).data().sender,
-        errors: validation.errors,
-        warnings: validation.warnings,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        read: false
       });
       
       throw new Error(`Validation failed: ${validation.errors.join(", ")}`);
@@ -111,10 +100,9 @@ async function validateERN(deliveryId, ernData, ernVersion) {
 }
 
 /**
- * Mock validation for testing
- * Returns realistic validation results without calling external API
+ * Improved mock validation for ERN 4.3
  */
-async function mockValidation(ernData, ernVersion) {
+async function mockValidation(ernData, ernVersion, deliveryId) {
   // Simulate processing delay
   await new Promise(resolve => setTimeout(resolve, 1000));
   
@@ -122,13 +110,40 @@ async function mockValidation(ernData, ernVersion) {
   const warnings = [];
   const info = [];
   
-  // Basic validation checks
-  if (!ernData.MessageHeader?.MessageId) {
-    errors.push("Missing MessageId in MessageHeader");
-  }
+  logger.log(`Mock validation for ERN ${ernVersion}`);
   
-  if (!ernData.ReleaseList && !ernData.NewReleaseMessage?.ReleaseList) {
-    errors.push("Missing ReleaseList in ERN message");
+  // Get delivery debug info
+  const deliveryDoc = await db.collection("deliveries").doc(deliveryId).get();
+  const debugInfo = deliveryDoc.data()?.debug?.parsing;
+  
+  // Enhanced validation checks based on ERN version
+  if (ernVersion.startsWith("ERN-4")) {
+    // ERN 4.x validation
+    if (!debugInfo?.hasMessageHeader) {
+      errors.push("Missing MessageHeader in ERN message");
+    }
+    
+    if (!debugInfo?.hasReleaseList) {
+      errors.push("Missing ReleaseList in ERN message");
+    }
+    
+    // Check for required ERN 4.x elements
+    if (!ernData.MessageProfile && !ernData.MessageControlType) {
+      warnings.push("MessageProfile or MessageControlType recommended for ERN 4.x");
+    }
+    
+  } else {
+    // ERN 3.x validation (legacy)
+    if (!ernData.MessageHeader?.MessageId && !debugInfo?.hasMessageHeader) {
+      errors.push("Missing MessageId in MessageHeader");
+    }
+    
+    if (!debugInfo?.hasReleaseList) {
+      errors.push("Missing ReleaseList in ERN message");
+    }
+    
+    // Add warning for deprecated version
+    warnings.push("ERN-3 is deprecated, consider upgrading to ERN-4");
   }
   
   // Add informational messages
@@ -136,9 +151,9 @@ async function mockValidation(ernData, ernVersion) {
   info.push("Schema validation: Passed");
   info.push("Business rules validation: Passed");
   
-  // Add a warning for testing
-  if (ernVersion === "ERN-3") {
-    warnings.push("ERN-3 is deprecated, consider upgrading to ERN-4");
+  if (debugInfo) {
+    info.push(`Releases found: ${debugInfo.releaseCount || 0}`);
+    info.push(`Root element: ${debugInfo.rootElement || 'Unknown'}`);
   }
   
   return {
@@ -147,8 +162,15 @@ async function mockValidation(ernData, ernVersion) {
     errors: errors,
     warnings: warnings,
     info: info,
-    version: "mock-validator-1.0"
+    version: "mock-validator-2.0"
   };
+}
+
+function detectProfile(ernData, ernVersion) {
+  if (ernVersion.startsWith("ERN-4")) {
+    return ernData.MessageProfile || ernData.MessageControlType || "CommonReleaseProfile";
+  }
+  return ernData.MessageControlType || "AudioAlbumMusicOnly";
 }
 
 // Export for direct use

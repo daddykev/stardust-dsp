@@ -1033,3 +1033,106 @@ exports.queueStatus = onRequest({
     response.status(500).json({ error: error.message });
   }
 });
+
+// Debug endpoint
+exports.debugDeliveryXML = onRequest({
+  cors: true
+}, async (request, response) => {
+  try {
+    const { deliveryId } = request.query;
+    
+    if (!deliveryId) {
+      response.status(400).json({ error: 'Missing deliveryId' });
+      return;
+    }
+    
+    const doc = await admin.firestore()
+      .collection('deliveries')
+      .doc(deliveryId)
+      .get();
+    
+    if (!doc.exists) {
+      response.status(404).json({ error: 'Delivery not found' });
+      return;
+    }
+    
+    const data = doc.data();
+    const xml = data.ernXml;
+    
+    if (!xml) {
+      response.json({ error: 'No XML found' });
+      return;
+    }
+    
+    // Get the problematic line
+    const lines = xml.split('\n');
+    const problemLine = lines[57]; // Line 58 (0-indexed)
+    
+    response.json({
+      deliveryId: deliveryId,
+      xmlLength: xml.length,
+      lineCount: lines.length,
+      line58: problemLine,
+      aroundColumn264: problemLine ? problemLine.substring(250, 280) : null,
+      first500Chars: xml.substring(0, 500),
+      hasHtmlEntities: xml.includes('&nbsp;') || xml.includes('&mdash;'),
+      hasUnescapedAmpersands: /&(?!amp;|lt;|gt;|quot;|apos;)/.test(xml)
+    });
+    
+  } catch (error) {
+    response.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Debug endpoint to track delivery ID changes
+ */
+exports.debugDeliveryHistory = onRequest({
+  cors: true
+}, async (request, response) => {
+  try {
+    const { deliveryId } = request.query;
+    
+    if (!deliveryId) {
+      response.status(400).json({ error: 'Missing deliveryId' });
+      return;
+    }
+    
+    const doc = await admin.firestore()
+      .collection('deliveries')
+      .doc(deliveryId)
+      .get();
+    
+    if (!doc.exists) {
+      response.status(404).json({ error: 'Delivery not found' });
+      return;
+    }
+    
+    const data = doc.data();
+    
+    response.json({
+      deliveryId: deliveryId,
+      originalMessageId: data.messageId,
+      ernMessageId: data.ern?.messageId,
+      processedMessageId: data.processing?.messageId,
+      senderInfo: {
+        sender: data.sender,
+        senderName: data.senderName
+      },
+      timestamps: {
+        receivedAt: data.processing?.receivedAt,
+        parsedAt: data.processing?.parsedAt,
+        validatedAt: data.validation?.validatedAt
+      },
+      xmlPreview: data.ernXml ? {
+        length: data.ernXml.length,
+        firstLine: data.ernXml.split('\n')[0],
+        hasMessageId: data.ernXml.includes('MessageId'),
+        messageIdMatches: data.ernXml.match(/<MessageId[^>]*>([^<]+)<\/MessageId>/g)
+      } : null
+    });
+    
+  } catch (error) {
+    response.status(500).json({ error: error.message });
+  }
+});

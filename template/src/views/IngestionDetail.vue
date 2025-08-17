@@ -162,6 +162,34 @@
                   <span class="badge">{{ delivery.ern?.releaseCount || 0 }}</span>
                 </div>
               </div>
+              
+              <!-- Raw XML Actions -->
+              <div class="card-actions">
+                <button 
+                  v-if="delivery.ernXml"
+                  @click="viewRawXML" 
+                  class="btn btn-secondary btn-sm"
+                >
+                  <font-awesome-icon icon="eye" />
+                  View Raw XML
+                </button>
+                <button 
+                  v-if="delivery.ernXml"
+                  @click="downloadRawXML" 
+                  class="btn btn-secondary btn-sm"
+                >
+                  <font-awesome-icon icon="download" />
+                  Download XML
+                </button>
+                <button 
+                  @click="debugDeliveryIDs" 
+                  class="btn btn-secondary btn-sm"
+                  title="Debug delivery ID changes"
+                >
+                  <font-awesome-icon icon="bug" />
+                  Debug IDs
+                </button>
+              </div>
             </div>
           </div>
 
@@ -525,6 +553,29 @@
       >
         <font-awesome-icon icon="bug" />
       </button>
+
+      <!-- Raw XML Modal -->
+      <div v-if="showXMLModal" class="xml-modal-overlay" @click="closeXMLModal">
+        <div class="xml-modal" @click.stop>
+          <div class="xml-modal-header">
+            <h3>Raw ERN XML</h3>
+            <div class="xml-modal-actions">
+              <button @click="copyXMLToClipboard" class="btn-icon" title="Copy to Clipboard">
+                <font-awesome-icon icon="copy" />
+              </button>
+              <button @click="downloadRawXML" class="btn-icon" title="Download">
+                <font-awesome-icon icon="download" />
+              </button>
+              <button @click="closeXMLModal" class="btn-icon" title="Close">
+                <font-awesome-icon icon="times" />
+              </button>
+            </div>
+          </div>
+          <div class="xml-modal-body">
+            <pre class="xml-content"><code>{{ formatXML(delivery.ernXml) }}</code></pre>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -545,6 +596,7 @@ const fileTransferJob = ref(null)
 const isLoading = ref(true)
 const isRefreshing = ref(false)
 const showDebug = ref(false)
+const showXMLModal = ref(false)
 
 // Real-time subscription
 let unsubscribe = null
@@ -557,7 +609,14 @@ const distributorName = computed(() => {
 
 const canReprocess = computed(() => {
   const status = delivery.value?.processing?.status
-  return status && ['failed', 'validation_failed', 'processing_failed', 'parse_failed'].includes(status)
+  return status && [
+    'failed', 
+    'validation_failed', 
+    'validation_error',
+    'processing_failed', 
+    'parse_failed',
+    'cancelled'
+  ].includes(status)
 })
 
 const isProcessing = computed(() => {
@@ -581,16 +640,24 @@ const processingSteps = computed(() => {
       id: 'file_transfer',
       label: 'File Transfer',
       icon: 'cloud-download-alt',
-      completed: ['parsing', 'validating', 'processing_releases', 'completed'].includes(status) || 
+      completed: ['files_ready', 'parsing', 'validating', 'processing_releases', 'completed'].includes(status) || 
                  delivery.value.files?.transferredAt,
       current: status === 'waiting_for_files',
-      failed: fileTransferJob.value?.status === 'failed',
+      failed: fileTransferJob.value?.status === 'permanently_failed',
       time: formatDate(delivery.value.files?.transferredAt),
       error: fileTransferJob.value?.error,
       details: delivery.value.files ? {
         audioTransferred: delivery.value.files.audioCount || 0,
         imageTransferred: delivery.value.files.imageCount || 0
       } : null
+    },
+    {
+      id: 'files_ready',
+      label: 'Files Ready',
+      icon: 'check-circle',
+      completed: ['parsing', 'validating', 'processing_releases', 'completed'].includes(status),
+      current: status === 'files_ready',
+      time: formatDate(delivery.value.files?.transferredAt)
     },
     {
       id: 'parsing',
@@ -608,9 +675,9 @@ const processingSteps = computed(() => {
       icon: 'check-circle',
       completed: ['processing_releases', 'completed'].includes(status),
       current: status === 'validating',
-      failed: status === 'validation_failed',
+      failed: status === 'validation_failed' || status === 'validation_error',
       time: formatDate(delivery.value.validation?.validatedAt),
-      error: status === 'validation_failed' ? 'Validation failed - see errors below' : null
+      error: (status === 'validation_failed' || status === 'validation_error') ? 'Validation failed - see errors below' : null
     },
     {
       id: 'processing',
@@ -628,6 +695,7 @@ const processingSteps = computed(() => {
       icon: 'flag-checkered',
       completed: status === 'completed',
       failed: status === 'failed',
+      cancelled: status === 'cancelled',
       time: formatDate(delivery.value.processing?.completedAt),
       error: status === 'failed' ? delivery.value.processing?.error : null
     }
@@ -639,12 +707,16 @@ const processingSteps = computed(() => {
 const progressPercentage = computed(() => {
   const status = delivery.value?.processing?.status
   const percentages = {
+    'received': 5,
     'pending': 10,
     'waiting_for_files': 20,
+    'files_ready': 30,
     'parsing': 40,
     'validating': 60,
     'processing_releases': 80,
-    'completed': 100
+    'completed': 100,
+    'cancelled': 0,
+    'failed': 0
   }
   return percentages[status] || 0
 })
@@ -652,12 +724,16 @@ const progressPercentage = computed(() => {
 const currentStepText = computed(() => {
   const status = delivery.value?.processing?.status
   const texts = {
+    'received': 'Delivery received successfully',
     'pending': 'Queued for processing...',
     'waiting_for_files': 'Transferring files from distributor...',
+    'files_ready': 'Files transferred, starting processing...',
     'parsing': 'Parsing ERN XML structure...',
     'validating': 'Validating with DDEX Workbench API...',
     'processing_releases': 'Processing releases and assets...',
-    'completed': 'Processing complete!'
+    'completed': 'Processing complete!',
+    'cancelled': 'Processing cancelled',
+    'failed': 'Processing failed'
   }
   return texts[status] || 'Processing...'
 })
@@ -728,7 +804,6 @@ async function reprocessDelivery() {
   isLoading.value = true
   
   try {
-    // Call the Cloud Function endpoint
     const response = await fetch('https://us-central1-stardust-dsp.cloudfunctions.net/reprocessDelivery', {
       method: 'POST',
       headers: {
@@ -742,15 +817,9 @@ async function reprocessDelivery() {
     const result = await response.json()
     
     if (response.ok) {
-      // Success - the delivery should start processing
       console.log('Reprocess triggered:', result)
-      
-      // Show success message
       alert('Delivery reprocessing started successfully!')
-      
-      // The real-time listener will automatically update the UI
     } else {
-      // Error from the function
       console.error('Reprocess failed:', result)
       alert(`Failed to reprocess: ${result.error || 'Unknown error'}`)
     }
@@ -762,7 +831,7 @@ async function reprocessDelivery() {
   }
 }
 
-// Manual process for testing (forces processing regardless of status)
+// Manual process for testing
 async function manualProcess() {
   if (!confirm('Manually trigger processing for this delivery? This will force processing regardless of current status.')) return
   
@@ -784,7 +853,6 @@ async function manualProcess() {
     if (response.ok) {
       console.log('Manual processing triggered:', result)
       alert('Manual processing started!')
-      // The real-time listener will automatically update the UI
     } else {
       console.error('Manual process failed:', result)
       alert(`Failed: ${result.error || 'Unknown error'}`)
@@ -805,17 +873,91 @@ function downloadAcknowledgment() {
 
 // View acknowledgment
 function viewAcknowledgment() {
-  // Could open in a modal or new tab
   const url = `https://us-central1-stardust-dsp.cloudfunctions.net/getAcknowledgment?deliveryId=${delivery.value.id}`
   window.open(url, '_blank')
 }
 
 // Report issue
 function reportIssue() {
-  // Could open a support form or email
   const subject = encodeURIComponent(`Issue with delivery ${delivery.value.id}`)
   const body = encodeURIComponent(`Delivery ID: ${delivery.value.id}\nError: ${delivery.value.processing?.error}`)
   window.location.href = `mailto:support@stardust-dsp.org?subject=${subject}&body=${body}`
+}
+
+// Raw XML functions
+function viewRawXML() {
+  if (!delivery.value?.ernXml) {
+    alert('No XML data available')
+    return
+  }
+  showXMLModal.value = true
+}
+
+function closeXMLModal() {
+  showXMLModal.value = false
+}
+
+function downloadRawXML() {
+  if (!delivery.value?.ernXml) {
+    alert('No XML data available')
+    return
+  }
+  
+  const filename = `${delivery.value.id || 'delivery'}_ern.xml`
+  const blob = new Blob([delivery.value.ernXml], { type: 'application/xml' })
+  const url = URL.createObjectURL(blob)
+  
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
+async function copyXMLToClipboard() {
+  if (!delivery.value?.ernXml) return
+  
+  try {
+    await navigator.clipboard.writeText(delivery.value.ernXml)
+    alert('XML copied to clipboard')
+  } catch (error) {
+    console.error('Failed to copy XML:', error)
+    alert('Failed to copy to clipboard')
+  }
+}
+
+function formatXML(xml) {
+  if (!xml) return ''
+  
+  try {
+    const formatted = xml
+      .replace(/></g, '>\n<')
+      .replace(/^\s*\n/gm, '')
+    return formatted
+  } catch (error) {
+    return xml
+  }
+}
+
+// Debug delivery IDs
+async function debugDeliveryIDs() {
+  try {
+    const response = await fetch(`https://us-central1-stardust-dsp.cloudfunctions.net/debugDeliveryHistory?deliveryId=${delivery.value.id}`)
+    const result = await response.json()
+    
+    if (response.ok) {
+      console.log('Delivery ID Debug:', result)
+      alert('Debug info logged to console. Check browser developer tools.')
+    } else {
+      console.error('Debug failed:', result)
+      alert('Failed to get debug info')
+    }
+  } catch (error) {
+    console.error('Debug request failed:', error)
+    alert('Failed to contact debug endpoint')
+  }
 }
 
 // Get processing time
@@ -861,6 +1003,8 @@ function formatFileSize(bytes) {
 function formatStatus(status) {
   if (!status) return 'Unknown'
   if (status === 'waiting_for_files') return 'Transferring Files'
+  if (status === 'files_ready') return 'Files Ready'
+  if (status === 'validation_error') return 'Validation Error'
   return status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
 }
 
@@ -878,7 +1022,6 @@ function getStatusClass(status) {
 function setupRealtimeUpdates() {
   const deliveryId = route.params.id
   
-  // Subscribe to delivery updates
   unsubscribe = onSnapshot(
     doc(db, 'deliveries', deliveryId),
     (doc) => {
@@ -891,7 +1034,6 @@ function setupRealtimeUpdates() {
     }
   )
   
-  // Subscribe to file transfer job updates
   unsubscribeTransfer = onSnapshot(
     doc(db, 'fileTransfers', deliveryId),
     (doc) => {
@@ -903,7 +1045,6 @@ function setupRealtimeUpdates() {
       }
     },
     (error) => {
-      // File transfer job might not exist, that's ok
       console.log('No file transfer job for this delivery')
     }
   )
@@ -1016,6 +1157,12 @@ onUnmounted(() => {
 
 .timeline-step:last-child {
   padding-bottom: 0;
+}
+
+.timeline-step.cancelled .step-marker {
+  background-color: var(--color-text-tertiary);
+  border-color: var(--color-text-tertiary);
+  color: white;
 }
 
 .step-marker {
@@ -1173,6 +1320,16 @@ onUnmounted(() => {
   border-radius: var(--radius-full);
   font-size: var(--text-sm);
   font-weight: var(--font-medium);
+}
+
+/* Card Actions */
+.card-actions {
+  display: flex;
+  gap: var(--space-sm);
+  margin-top: var(--space-lg);
+  padding-top: var(--space-lg);
+  border-top: 1px solid var(--color-border);
+  flex-wrap: wrap;
 }
 
 /* File Transfer Information */
@@ -1467,6 +1624,74 @@ onUnmounted(() => {
   overflow-y: auto;
 }
 
+/* XML Modal Styles */
+.xml-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.7);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-lg);
+}
+
+.xml-modal {
+  background-color: var(--color-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  width: 90vw;
+  max-width: 1200px;
+  height: 80vh;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border);
+}
+
+.xml-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-lg);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.xml-modal-header h3 {
+  margin: 0;
+  color: var(--color-heading);
+}
+
+.xml-modal-actions {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.xml-modal-body {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.xml-content {
+  flex: 1;
+  margin: 0;
+  padding: var(--space-lg);
+  background-color: var(--color-bg-tertiary);
+  border: none;
+  border-radius: 0;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
 /* Status Badge */
 .status-badge {
   display: inline-flex;
@@ -1657,6 +1882,31 @@ onUnmounted(() => {
   .step-details {
     flex-direction: column;
     gap: var(--space-xs);
+  }
+  
+  .xml-modal {
+    width: 95vw;
+    height: 90vh;
+    margin: var(--space-sm);
+  }
+  
+  .xml-modal-header {
+    flex-direction: column;
+    gap: var(--space-sm);
+    text-align: center;
+  }
+  
+  .xml-content {
+    font-size: var(--text-xs);
+    padding: var(--space-md);
+  }
+  
+  .card-actions {
+    flex-direction: column;
+  }
+  
+  .card-actions .btn {
+    width: 100%;
   }
 }
 </style>

@@ -10,6 +10,21 @@
         },
         {
           "fieldPath": "processing.receivedAt",
+          "order": "ASCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "deliveries",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "processing.status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "processing.receivedAt",
           "order": "DESCENDING"
         }
       ],
@@ -26,6 +41,25 @@
         {
           "fieldPath": "processing.receivedAt",
           "order": "DESCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "fileTransfers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "retryCount",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "ASCENDING"
         }
       ],
       "density": "SPARSE_ALL"

@@ -70,11 +70,13 @@
                 <option value="received">Received</option>
                 <option value="pending">Pending</option>
                 <option value="waiting_for_files">Transferring Files</option>
+                <option value="files_ready">Files Ready</option>  <!-- Add this -->
                 <option value="parsing">Parsing</option>
                 <option value="validating">Validating</option>
                 <option value="processing_releases">Processing</option>
                 <option value="completed">Completed</option>
                 <option value="failed">Failed</option>
+                <option value="cancelled">Cancelled</option>  <!-- Add this -->
               </select>
             </div>
             <div class="filter-group">
@@ -634,7 +636,7 @@ async function downloadAcknowledgment(delivery) {
 // Utility functions
 function isProcessing(delivery) {
   const status = getStatus(delivery)
-  return ['received', 'pending', 'parsing', 'validating', 'processing_releases', 'waiting_for_files'].includes(status)
+  return ['received', 'pending', 'files_ready', 'parsing', 'validating', 'processing_releases', 'waiting_for_files'].includes(status)
 }
 
 function getProgress(delivery) {
@@ -643,10 +645,13 @@ function getProgress(delivery) {
     'received': 5,
     'pending': 10,
     'waiting_for_files': 25,
+    'files_ready': 30,
     'parsing': 40,
     'validating': 60,
     'processing_releases': 80,
-    'completed': 100
+    'completed': 100,
+    'cancelled': 0,
+    'failed': 0
   }
   return steps[status] || 0
 }
@@ -657,10 +662,13 @@ function getCurrentStep(delivery) {
     'received': 'Delivery received...',
     'pending': 'Queued for processing...',
     'waiting_for_files': 'Transferring files from distributor...',
+    'files_ready': 'Files ready, starting processing...',
     'parsing': 'Parsing ERN XML...',
     'validating': 'Validating with DDEX Workbench...',
     'processing_releases': 'Processing releases and assets...',
-    'completed': 'Complete!'
+    'completed': 'Complete!',
+    'cancelled': 'Cancelled',
+    'failed': 'Failed'
   }
   return steps[status] || 'Unknown'
 }
@@ -670,7 +678,9 @@ function getStatusClass(status) {
   if (status?.includes('failed') || status === 'error') return 'error'
   if (['parsing', 'validating', 'processing_releases'].includes(status)) return 'processing'
   if (status === 'waiting_for_files') return 'transferring'
+  if (status === 'files_ready') return 'ready'
   if (status === 'pending' || status === 'received') return 'pending'
+  if (status === 'cancelled') return 'cancelled'
   return 'default'
 }
 
@@ -1284,6 +1294,16 @@ onUnmounted(() => {
 }
 
 .status-badge.default {
+  background-color: var(--color-text-tertiary);
+  color: white;
+}
+
+.status-badge.ready {
+  background-color: var(--color-info);
+  color: white;
+}
+
+.status-badge.cancelled {
   background-color: var(--color-text-tertiary);
   color: white;
 }
