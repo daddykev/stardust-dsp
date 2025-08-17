@@ -402,32 +402,74 @@ function generateArtistId(artistName) {
 }
 
 function extractTitle(release) {
-  return release.ReleaseDetailsByTerritory?.[0]?.Title?.TitleText || 
-         release.ReferenceTitle?.TitleText || 
-         "Unknown Title";
+  // ERN 4.3: Check DisplayTitleText first (direct under Release)
+  if (release.DisplayTitleText || release.displaytitletext) {
+    return release.DisplayTitleText || release.displaytitletext;
+  }
+  
+  // ERN 4.3: Check ReferenceTitle
+  if (release.ReferenceTitle?.TitleText) {
+    return release.ReferenceTitle.TitleText;
+  }
+  
+  // ERN 3.x: Check ReleaseDetailsByTerritory
+  if (release.ReleaseDetailsByTerritory?.[0]?.Title?.TitleText) {
+    return release.ReleaseDetailsByTerritory[0].Title.TitleText;
+  }
+  
+  return "Unknown Title";
 }
 
 function extractArtist(release) {
-  const artist = release.ReleaseDetailsByTerritory?.[0]?.DisplayArtist;
-  return artist?.PartyName?.FullName || artist?.Name || "Unknown Artist";
-}
-
-function extractRecordingArtist(recording) {
-  return recording.DisplayArtist?.PartyName?.FullName || 
-         recording.DisplayArtist?.Name || 
-         recording.MainArtist?.Name ||
-         null;
+  // ERN 4.3: Check DisplayArtist directly under Release
+  if (release.DisplayArtist) {
+    const artist = release.DisplayArtist;
+    return artist.PartyName?.FullName || 
+           artist.partyname?.fullname || 
+           artist.Name || 
+           artist.name ||
+           "Unknown Artist";
+  }
+  
+  // ERN 3.x: Check ReleaseDetailsByTerritory
+  if (release.ReleaseDetailsByTerritory?.[0]?.DisplayArtist) {
+    const artist = release.ReleaseDetailsByTerritory[0].DisplayArtist;
+    return artist.PartyName?.FullName || artist.Name || "Unknown Artist";
+  }
+  
+  return "Unknown Artist";
 }
 
 function extractLabel(release) {
-  const labelName = release.ReleaseDetailsByTerritory?.[0]?.LabelName;
-  return Array.isArray(labelName) ? labelName[0] : labelName || "Independent";
+  // ERN 4.3: Check LabelName directly under Release
+  if (release.LabelName || release.labelname) {
+    const labelName = release.LabelName || release.labelname;
+    return Array.isArray(labelName) ? labelName[0] : labelName;
+  }
+  
+  // ERN 3.x: Check ReleaseDetailsByTerritory
+  if (release.ReleaseDetailsByTerritory?.[0]?.LabelName) {
+    const labelName = release.ReleaseDetailsByTerritory[0].LabelName;
+    return Array.isArray(labelName) ? labelName[0] : labelName;
+  }
+  
+  return "Independent";
 }
 
 function extractGenres(release) {
-  const genres = release.ReleaseDetailsByTerritory?.[0]?.Genre || [];
+  let genres = [];
+  
+  // ERN 4.3: Check Genre directly under Release
+  if (release.Genre || release.genre) {
+    genres = release.Genre || release.genre;
+  }
+  // ERN 3.x: Check ReleaseDetailsByTerritory
+  else if (release.ReleaseDetailsByTerritory?.[0]?.Genre) {
+    genres = release.ReleaseDetailsByTerritory[0].Genre;
+  }
+  
   const genreList = Array.isArray(genres) ? genres : [genres];
-  return genreList.map(g => g.GenreText || g).filter(Boolean);
+  return genreList.map(g => g.GenreText || g.genretext || g).filter(Boolean);
 }
 
 function extractRecordingGenres(recording) {
@@ -439,23 +481,32 @@ function extractRecordingGenres(recording) {
 function extractCopyright(item) {
   const copyrights = [];
   
-  if (item.CLine) {
-    const clines = Array.isArray(item.CLine) ? item.CLine : [item.CLine];
-    copyrights.push(...clines.map(c => ({
-      type: "C",
-      text: c.CLineText || c,
-      year: c.Year || null
-    })));
-  }
+  // Check both CLine and PLine with case variations
+  const clines = item.CLine || item.cline || [];
+  const clineArray = Array.isArray(clines) ? clines : [clines];
   
-  if (item.PLine) {
-    const plines = Array.isArray(item.PLine) ? item.PLine : [item.PLine];
-    copyrights.push(...plines.map(p => ({
-      type: "P",
-      text: p.PLineText || p,
-      year: p.Year || null
-    })));
-  }
+  clineArray.forEach(c => {
+    if (c) {
+      copyrights.push({
+        type: "C",
+        text: c.CLineText || c.clinetext || c,
+        year: c.Year || c.year || null
+      });
+    }
+  });
+  
+  const plines = item.PLine || item.pline || [];
+  const plineArray = Array.isArray(plines) ? plines : [plines];
+  
+  plineArray.forEach(p => {
+    if (p) {
+      copyrights.push({
+        type: "P",
+        text: p.PLineText || p.plinetext || p,
+        year: p.Year || p.year || null
+      });
+    }
+  });
   
   return copyrights;
 }
@@ -486,7 +537,12 @@ function extractContributors(recording) {
 }
 
 function parseReleaseDate(release) {
-  const dateStr = release.GlobalOriginalReleaseDate || 
+  // ERN 4.3: Check direct date fields
+  const dateStr = release.OriginalReleaseDate || 
+                  release.originalreleasedate ||
+                  release.ReleaseDate || 
+                  release.releasedate ||
+                  release.GlobalOriginalReleaseDate || 
                   release.GlobalReleaseDate || 
                   release.ReleaseDetailsByTerritory?.[0]?.ReleaseDate ||
                   new Date().toISOString();

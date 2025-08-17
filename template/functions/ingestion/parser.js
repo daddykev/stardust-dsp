@@ -69,6 +69,10 @@ function detectERNVersionFromXML(xmlString) {
   if (versionMatch) {
     const version = versionMatch[1];
     logger.log(`Found MessageSchemaVersionId: ${version}`);
+    // Convert ern/43 format to ERN-4.3 format
+    if (version === 'ern/43') return 'ERN-4.3';
+    if (version === 'ern/42') return 'ERN-4.2';
+    if (version === 'ern/41') return 'ERN-4.1';
     return version;
   }
   
@@ -125,15 +129,18 @@ async function parseERN(deliveryId, ernXml) {
     const sanitizedXml = sanitizeXML(ernXml);
     
     // Parse XML with options optimized for ERN 4.3
+    // IMPORTANT: normalize must be false to preserve casing
     const parser = new xml2js.Parser({
       explicitArray: false,
       ignoreAttrs: false,
       tagNameProcessors: [xml2js.processors.stripPrefix], // Remove namespace prefixes
       strict: false,
-      normalize: true,
+      normalize: false,  // CHANGED: Don't normalize to uppercase
       normalizeTags: false, // Keep original casing for ERN 4.3
       preserveChildrenOrder: false,
-      explicitRoot: true
+      explicitRoot: true,
+      attrkey: '$',
+      charkey: '_'
     });
     
     let ernData;
@@ -158,6 +165,7 @@ async function parseERN(deliveryId, ernXml) {
     const rootData = ernData[rootKey];
     
     logger.log(`Root element: ${rootKey}`);
+    logger.log(`Root data keys: ${Object.keys(rootData).join(', ')}`);
     
     // Extract ERN profile
     const ernProfile = detectERNProfile(rootData, detectedVersion);
@@ -167,38 +175,37 @@ async function parseERN(deliveryId, ernXml) {
     
     logger.log(`Found ${releases.length} releases`);
     
-    // Build ERN metadata object
-    const messageHeader = rootData.MessageHeader || rootData.messageheader || {};
-    const messageSender = messageHeader.MessageSender || messageHeader.messagesender || {};
-    const partyName = messageSender.PartyName || messageSender.partyname || {};
+    // Build ERN metadata object - case sensitive access
+    const messageHeader = rootData.MessageHeader || rootData.messageheader || rootData.MESSAGEHEADER || {};
+    const messageSender = messageHeader.MessageSender || messageHeader.messagesender || messageHeader.MESSAGESENDER || {};
+    const partyName = messageSender.PartyName || messageSender.partyname || messageSender.PARTYNAME || {};
     
     // Extract parsed messageId but preserve original delivery messageId
-    const parsedMessageId = messageHeader.MessageId || messageHeader.messageid || null;
+    const parsedMessageId = messageHeader.MessageId || messageHeader.messageid || messageHeader.MESSAGEID || null;
     
     logger.log(`DEBUG: Original messageId: ${originalData.messageId}, Parsed messageId: ${parsedMessageId}`);
+    logger.log(`DEBUG: MessageHeader keys: ${Object.keys(messageHeader).join(', ')}`);
     
     const ernMetadata = {
-      version: detectedVersion, // Use detected version instead of fallback logic
+      version: detectedVersion,
       profile: ernProfile,
-      // Preserve original messageId, only use parsed one if original doesn't exist
       messageId: originalData.messageId || parsedMessageId || deliveryId,
       releaseCount: releases.length,
-      // Store parsed messageId separately for comparison/debugging
       parsedMessageId: parsedMessageId
     };
     
     // Only add optional fields if they exist
-    if (messageHeader.MessageCreatedDateTime || messageHeader.messagecreateddatetime) {
-      ernMetadata.messageCreatedDateTime = messageHeader.MessageCreatedDateTime || messageHeader.messagecreateddatetime;
+    if (messageHeader.MessageCreatedDateTime || messageHeader.messagecreateddatetime || messageHeader.MESSAGECREATEDDATETIME) {
+      ernMetadata.messageCreatedDateTime = messageHeader.MessageCreatedDateTime || messageHeader.messagecreateddatetime || messageHeader.MESSAGECREATEDDATETIME;
     }
     
     // Build message sender object
     const messageSenderData = {};
-    if (messageSender.PartyId || messageSender.partyid) {
-      messageSenderData.partyId = messageSender.PartyId || messageSender.partyid;
+    if (messageSender.PartyId || messageSender.partyid || messageSender.PARTYID) {
+      messageSenderData.partyId = messageSender.PartyId || messageSender.partyid || messageSender.PARTYID;
     }
-    if (partyName.FullName || partyName.fullname) {
-      messageSenderData.partyName = partyName.FullName || partyName.fullname;
+    if (partyName.FullName || partyName.fullname || partyName.FULLNAME) {
+      messageSenderData.partyName = partyName.FullName || partyName.fullname || partyName.FULLNAME;
     }
     
     // Only add messageSender if it has data
@@ -209,8 +216,8 @@ async function parseERN(deliveryId, ernXml) {
     // Clean the parsed data for Firestore
     const parsedDataToStore = {
       releases: cleanForFirestore(releases),
-      resourceList: cleanForFirestore(rootData.ResourceList || rootData.resourcelist),
-      dealList: cleanForFirestore(rootData.DealList || rootData.deallist),
+      resourceList: cleanForFirestore(rootData.ResourceList || rootData.resourcelist || rootData.RESOURCELIST),
+      dealList: cleanForFirestore(rootData.DealList || rootData.deallist || rootData.DEALLIST),
       messageHeader: cleanForFirestore(messageHeader)
     };
     
@@ -234,7 +241,7 @@ async function parseERN(deliveryId, ernXml) {
         detectedVersion: detectedVersion,
         rootElement: rootKey,
         releaseCount: releases.length,
-        hasMessageHeader: !!messageHeader.MessageId,
+        hasMessageHeader: !!(messageHeader && (messageHeader.MessageId || messageHeader.messageid || messageHeader.MESSAGEID)),
         hasReleaseList: releases.length > 0,
         timestamp: admin.firestore.FieldValue.serverTimestamp()
       }
@@ -254,7 +261,7 @@ async function parseERN(deliveryId, ernXml) {
     return { 
       success: true, 
       releases: releases,
-      ernData: rootData, // Return the actual data without wrapper
+      ernData: rootData,
       ernVersion: detectedVersion
     };
     
@@ -286,17 +293,21 @@ async function parseERN(deliveryId, ernXml) {
 }
 
 function detectERNProfile(ernData, ernVersion) {
-  // For ERN 4.3, look for MessageProfile or MessageControlType
-  const messageProfile = ernData.MessageHeader?.MessageProfile || 
-                        ernData.messageheader?.messageprofile;
+  // For ERN 4.3, look for MessageProfile or MessageControlType (case-insensitive)
+  const messageHeader = ernData.MessageHeader || ernData.messageheader || ernData.MESSAGEHEADER || {};
+  
+  const messageProfile = messageHeader.MessageProfile || 
+                        messageHeader.messageprofile ||
+                        messageHeader.MESSAGEPROFILE;
   
   if (messageProfile) {
     return messageProfile;
   }
   
   // Fallback to MessageControlType for older versions
-  const messageControlType = ernData.MessageHeader?.MessageControlType ||
-                            ernData.messageheader?.messagecontroltype;
+  const messageControlType = messageHeader.MessageControlType ||
+                            messageHeader.messagecontroltype ||
+                            messageHeader.MESSAGECONTROLTYPE;
     
   if (messageControlType) {
     return messageControlType;
@@ -304,86 +315,91 @@ function detectERNProfile(ernData, ernVersion) {
   
   // Default based on version
   if (ernVersion.startsWith("ERN-4")) {
-    return "CommonReleaseProfile"; // Common ERN 4.x profile
+    return "CommonReleaseProfile";
   }
   
-  return "AudioAlbumMusicOnly"; // Default ERN 3.x profile
+  return "AudioAlbumMusicOnly";
 }
 
-// Updated extractReleases function to handle ERN 4.3 structure
+// Updated extractReleases function to handle ERN 4.3 structure with case sensitivity
 function extractReleases(ernData, ernVersion) {
   let releases = [];
   
   logger.log("Extracting releases from parsed data");
+  logger.log("Available root keys:", Object.keys(ernData || {}));
   
-  // ERN 4.3 structure - look for ReleaseList directly under root
-  if (ernData.ReleaseList?.Release) {
-    releases = Array.isArray(ernData.ReleaseList.Release) 
-      ? ernData.ReleaseList.Release 
-      : [ernData.ReleaseList.Release];
-    logger.log(`Found releases in ReleaseList.Release: ${releases.length}`);
-  } 
-  // Try lowercase versions
-  else if (ernData.releaselist?.release) {
-    releases = Array.isArray(ernData.releaselist.release)
-      ? ernData.releaselist.release
-      : [ernData.releaselist.release];
-    logger.log(`Found releases in releaselist.release: ${releases.length}`);
-  }
-  // ERN 3.x might nest under NewReleaseMessage
-  else if (ernData.NewReleaseMessage?.ReleaseList?.Release) {
-    releases = Array.isArray(ernData.NewReleaseMessage.ReleaseList.Release)
-      ? ernData.NewReleaseMessage.ReleaseList.Release
-      : [ernData.NewReleaseMessage.ReleaseList.Release];
-    logger.log(`Found releases in NewReleaseMessage.ReleaseList.Release: ${releases.length}`);
-  } 
-  else if (ernData.newreleasemessage?.releaselist?.release) {
-    releases = Array.isArray(ernData.newreleasemessage.releaselist.release)
-      ? ernData.newreleasemessage.releaselist.release
-      : [ernData.newreleasemessage.releaselist.release];
-    logger.log(`Found releases in newreleasemessage.releaselist.release: ${releases.length}`);
-  }
-  else {
-    logger.warn("No releases found in expected locations");
-    logger.warn("Available keys:", Object.keys(ernData));
-    if (ernData.ReleaseList) {
-      logger.warn("ReleaseList keys:", Object.keys(ernData.ReleaseList));
+  // ERN 4.3 structure - look for ReleaseList with case variations
+  const releaseList = ernData.ReleaseList || ernData.releaselist || ernData.RELEASELIST;
+  
+  if (releaseList) {
+    logger.log("Found ReleaseList with keys:", Object.keys(releaseList));
+    
+    const releaseData = releaseList.Release || releaseList.release || releaseList.RELEASE;
+    
+    if (releaseData) {
+      releases = Array.isArray(releaseData) ? releaseData : [releaseData];
+      logger.log(`Found ${releases.length} releases in ReleaseList`);
     }
+  }
+  
+  // If still no releases, try nested under NewReleaseMessage (ERN 3.x)
+  if (releases.length === 0) {
+    const nestedMessage = ernData.NewReleaseMessage || ernData.newreleasemessage || ernData.NEWRELEASEMESSAGE;
+    if (nestedMessage) {
+      const nestedReleaseList = nestedMessage.ReleaseList || nestedMessage.releaselist || nestedMessage.RELEASELIST;
+      if (nestedReleaseList) {
+        const nestedReleases = nestedReleaseList.Release || nestedReleaseList.release || nestedReleaseList.RELEASE;
+        if (nestedReleases) {
+          releases = Array.isArray(nestedReleases) ? nestedReleases : [nestedReleases];
+          logger.log(`Found ${releases.length} releases in nested structure`);
+        }
+      }
+    }
+  }
+  
+  if (releases.length === 0) {
+    logger.warn("No releases found in expected locations");
   }
   
   return releases.map((release, index) => {
     const mappedRelease = {};
     
-    logger.log(`Processing release ${index + 1}:`, Object.keys(release));
+    logger.log(`Processing release ${index + 1}:`, Object.keys(release || {}));
     
-    // Only add fields that exist
-    if (release.ReleaseId || release.releaseid) {
-      mappedRelease.ReleaseId = release.ReleaseId || release.releaseid;
+    // Map release properties with case variations
+    if (release.ReleaseId || release.releaseid || release.RELEASEID) {
+      mappedRelease.ReleaseId = release.ReleaseId || release.releaseid || release.RELEASEID;
     }
-    if (release.ReleaseReference || release.releasereference) {
-      mappedRelease.ReleaseReference = release.ReleaseReference || release.releasereference;
+    if (release.ReleaseReference || release.releasereference || release.RELEASEREFERENCE) {
+      mappedRelease.ReleaseReference = release.ReleaseReference || release.releasereference || release.RELEASEREFERENCE;
     }
-    if (release.ReleaseType || release.releasetype) {
-      mappedRelease.ReleaseType = release.ReleaseType || release.releasetype;
+    if (release.ReleaseType || release.releasetype || release.RELEASETYPE) {
+      mappedRelease.ReleaseType = release.ReleaseType || release.releasetype || release.RELEASETYPE;
     }
-    if (release.ReleaseDetailsByTerritory || release.releasedetailsbyterritory) {
-      mappedRelease.ReleaseDetailsByTerritory = release.ReleaseDetailsByTerritory || release.releasedetailsbyterritory;
+    if (release.ReleaseDetailsByTerritory || release.releasedetailsbyterritory || release.RELEASEDETAILSBYTERRITORY) {
+      mappedRelease.ReleaseDetailsByTerritory = release.ReleaseDetailsByTerritory || release.releasedetailsbyterritory || release.RELEASEDETAILSBYTERRITORY;
     }
-    if (release.ReferenceTitle || release.referencetitle) {
-      mappedRelease.ReferenceTitle = release.ReferenceTitle || release.referencetitle;
+    if (release.ReferenceTitle || release.referencetitle || release.REFERENCETITLE) {
+      mappedRelease.ReferenceTitle = release.ReferenceTitle || release.referencetitle || release.REFERENCETITLE;
     }
-    if (release.ReleaseResourceReferenceList || release.releaseresourcereferencelist) {
-      mappedRelease.ReleaseResourceReferenceList = release.ReleaseResourceReferenceList || release.releaseresourcereferencelist;
+    if (release.DisplayTitleText || release.displaytitletext || release.DISPLAYTITLETEXT) {
+      mappedRelease.DisplayTitleText = release.DisplayTitleText || release.displaytitletext || release.DISPLAYTITLETEXT;
+    }
+    if (release.DisplayArtist || release.displayartist || release.DISPLAYARTIST) {
+      mappedRelease.DisplayArtist = release.DisplayArtist || release.displayartist || release.DISPLAYARTIST;
+    }
+    if (release.ReleaseResourceReferenceList || release.releaseresourcereferencelist || release.RELEASERESOURCEREFERENCELIST) {
+      mappedRelease.ReleaseResourceReferenceList = release.ReleaseResourceReferenceList || release.releaseresourcereferencelist || release.RELEASERESOURCEREFERENCELIST;
     }
     
     // Add ResourceList from parent if available
-    mappedRelease.ResourceList = ernData.ResourceList || ernData.resourcelist;
+    mappedRelease.ResourceList = ernData.ResourceList || ernData.resourcelist || ernData.RESOURCELIST;
     
-    if (release.GlobalReleaseDate || release.globalreleasedate) {
-      mappedRelease.GlobalReleaseDate = release.GlobalReleaseDate || release.globalreleasedate;
+    if (release.GlobalReleaseDate || release.globalreleasedate || release.GLOBALRELEASEDATE || release.ReleaseDate || release.releasedate) {
+      mappedRelease.GlobalReleaseDate = release.GlobalReleaseDate || release.globalreleasedate || release.GLOBALRELEASEDATE || release.ReleaseDate || release.releasedate;
     }
-    if (release.GlobalOriginalReleaseDate || release.globaloriginalreleasedate) {
-      mappedRelease.GlobalOriginalReleaseDate = release.GlobalOriginalReleaseDate || release.globaloriginalreleasedate;
+    if (release.GlobalOriginalReleaseDate || release.globaloriginalreleasedate || release.GLOBALORIGINALRELEASEDATE || release.OriginalReleaseDate) {
+      mappedRelease.GlobalOriginalReleaseDate = release.GlobalOriginalReleaseDate || release.globaloriginalreleasedate || release.GLOBALORIGINALRELEASEDATE || release.OriginalReleaseDate;
     }
     
     return mappedRelease;
