@@ -307,7 +307,11 @@ async function transferDeliveryFiles(deliveryId) {
     
     const delivery = deliveryDoc.data();
     const parsedData = delivery.parsedData || {};
-    const resourceList = parsedData.resourceList || {};
+    
+    // Handle uppercase keys from parser
+    const resourceList = parsedData.resourceList || 
+                        parsedData.ResourceList || 
+                        parsedData.RESOURCELIST || {};
     
     // Get the file transfer job
     const transferDoc = await admin.firestore()
@@ -340,35 +344,18 @@ async function transferDeliveryFiles(deliveryId) {
     // Create base path for this delivery
     const basePath = `deliveries/${distributorId}/${deliveryId}`;
     
-    // Get MD5 hashes from parsed data
-    const expectedMD5s = {
-      audio: [],
-      images: []
-    };
-    
-    // Extract expected MD5s for audio files
-    const soundRecordings = resourceList.SoundRecording || resourceList.soundRecording || [];
+    // Extract sound recordings and images with uppercase handling
+    const soundRecordings = resourceList.SoundRecording || 
+                           resourceList.soundRecording || 
+                           resourceList.SOUNDRECORDING || [];
     const allSoundRecordings = Array.isArray(soundRecordings) ? soundRecordings : [soundRecordings];
-    allSoundRecordings.forEach(recording => {
-      const technicalDetails = recording.TechnicalDetails || recording.technicalDetails;
-      if (technicalDetails?.File?.HashSum?.HashSum) {
-        expectedMD5s.audio.push(technicalDetails.File.HashSum.HashSum);
-      } else {
-        expectedMD5s.audio.push(null);
-      }
-    });
     
-    // Extract expected MD5s for image files
-    const images = resourceList.Image || resourceList.image || [];
+    const images = resourceList.Image || 
+                  resourceList.image || 
+                  resourceList.IMAGE || [];
     const allImages = Array.isArray(images) ? images : [images];
-    allImages.forEach(image => {
-      const technicalDetails = image.TechnicalDetails || image.technicalDetails;
-      if (technicalDetails?.File?.HashSum?.HashSum) {
-        expectedMD5s.images.push(technicalDetails.File.HashSum.HashSum);
-      } else {
-        expectedMD5s.images.push(null);
-      }
-    });
+    
+    console.log(`Found ${allSoundRecordings.length} sound recordings and ${allImages.length} images in parsedData`);
     
     // Transfer audio files with MD5 validation
     if (audioFiles && audioFiles.length > 0) {
@@ -376,7 +363,46 @@ async function transferDeliveryFiles(deliveryId) {
       
       for (let i = 0; i < audioFiles.length; i++) {
         const sourceUrl = audioFiles[i];
-        const expectedMD5 = expectedMD5s.audio[i];
+        const soundRecording = allSoundRecordings[i] || {};
+        
+        // Extract DDEX filename and MD5 from the resource (handle uppercase)
+        let ddexFileName = null;
+        let expectedMD5 = null;
+        
+        const technicalDetails = soundRecording.TechnicalDetails || 
+                               soundRecording.technicalDetails || 
+                               soundRecording.TECHNICALDETAILS || {};
+        
+        const file = technicalDetails.File || 
+                    technicalDetails.file || 
+                    technicalDetails.FILE || {};
+        
+        // Get filename
+        ddexFileName = file.FileName || 
+                      file.fileName || 
+                      file.FILENAME;
+        
+        // Get MD5 hash
+        const hashSum = file.HashSum || 
+                       file.hashSum || 
+                       file.HASHSUM || {};
+        
+        if (hashSum) {
+          const hashType = hashSum.HashSumAlgorithmType || 
+                          hashSum.hashSumAlgorithmType || 
+                          hashSum.HASHSUMALGORITHMTYPE;
+          
+          const hashValue = hashSum.HashSum || 
+                           hashSum.hashSum || 
+                           hashSum.HASHSUM;
+          
+          if (hashType === 'MD5' && hashValue) {
+            expectedMD5 = hashValue.toLowerCase();
+          }
+        }
+        
+        console.log(`Sound recording ${i + 1} - File data:`, JSON.stringify(file, null, 2));
+        console.log(`Expected MD5: ${expectedMD5}, DDEX filename: ${ddexFileName}`);
         
         try {
           console.log(`Downloading audio file ${i + 1}/${audioFiles.length}: ${sourceUrl}`);
@@ -393,12 +419,14 @@ async function transferDeliveryFiles(deliveryId) {
           
           // Calculate MD5 of downloaded file
           const buffer = Buffer.from(response.data);
-          const calculatedMD5 = calculateMD5(buffer);
+          const calculatedMD5 = calculateMD5(buffer).toLowerCase();
+          
+          console.log(`Calculated MD5: ${calculatedMD5}`);
           
           // Validate MD5 if expected hash exists
           let md5Valid = null;
           if (expectedMD5) {
-            md5Valid = calculatedMD5.toLowerCase() === expectedMD5.toLowerCase();
+            md5Valid = calculatedMD5 === expectedMD5;
             if (!md5Valid) {
               console.warn(`MD5 mismatch for audio file ${i + 1}: expected ${expectedMD5}, got ${calculatedMD5}`);
             } else {
@@ -406,15 +434,17 @@ async function transferDeliveryFiles(deliveryId) {
             }
           }
           
-          // Extract filename from URL or generate one
-          const fileName = extractFileName(sourceUrl) || `audio_${i + 1}.mp3`;
+          // Use DDEX filename if available, otherwise extract from URL
+          const fileName = ddexFileName || extractFileName(sourceUrl) || `audio_${i + 1}.wav`;
           const storagePath = `${basePath}/audio/${fileName}`;
+          
+          console.log(`Storing as: ${storagePath}`);
           
           // Upload to DSP's storage
           const file = bucket.file(storagePath);
           await file.save(buffer, {
             metadata: {
-              contentType: response.headers['content-type'] || 'audio/mpeg',
+              contentType: response.headers['content-type'] || 'audio/wav',
               metadata: {
                 sourceUrl: sourceUrl,
                 deliveryId: deliveryId,
@@ -422,7 +452,8 @@ async function transferDeliveryFiles(deliveryId) {
                 transferredAt: new Date().toISOString(),
                 md5Hash: calculatedMD5,
                 md5Valid: md5Valid !== null ? md5Valid.toString() : 'not_checked',
-                expectedMD5: expectedMD5 || 'none'  // Use 'none' instead of undefined
+                expectedMD5: expectedMD5 || 'none',
+                ddexFileName: ddexFileName || 'none'
               }
             }
           });
@@ -438,7 +469,7 @@ async function transferDeliveryFiles(deliveryId) {
             size: response.data.length,
             md5Hash: calculatedMD5,
             md5Valid: md5Valid,
-            expectedMD5: expectedMD5 || null  // Convert undefined to null
+            expectedMD5: expectedMD5 || null
           });
           
           console.log(`✅ Transferred audio file: ${fileName} (${response.data.length} bytes, MD5: ${md5Valid ? 'VALID' : md5Valid === false ? 'INVALID' : 'NOT CHECKED'})`);
@@ -456,7 +487,46 @@ async function transferDeliveryFiles(deliveryId) {
       
       for (let i = 0; i < imageFiles.length; i++) {
         const sourceUrl = imageFiles[i];
-        const expectedMD5 = expectedMD5s.images[i];
+        const image = allImages[i] || {};
+        
+        // Extract DDEX filename and MD5 from the resource (handle uppercase)
+        let ddexFileName = null;
+        let expectedMD5 = null;
+        
+        const technicalDetails = image.TechnicalDetails || 
+                               image.technicalDetails || 
+                               image.TECHNICALDETAILS || {};
+        
+        const file = technicalDetails.File || 
+                    technicalDetails.file || 
+                    technicalDetails.FILE || {};
+        
+        // Get filename
+        ddexFileName = file.FileName || 
+                      file.fileName || 
+                      file.FILENAME;
+        
+        // Get MD5 hash
+        const hashSum = file.HashSum || 
+                       file.hashSum || 
+                       file.HASHSUM || {};
+        
+        if (hashSum) {
+          const hashType = hashSum.HashSumAlgorithmType || 
+                          hashSum.hashSumAlgorithmType || 
+                          hashSum.HASHSUMALGORITHMTYPE;
+          
+          const hashValue = hashSum.HashSum || 
+                           hashSum.hashSum || 
+                           hashSum.HASHSUM;
+          
+          if (hashType === 'MD5' && hashValue) {
+            expectedMD5 = hashValue.toLowerCase();
+          }
+        }
+        
+        console.log(`Image ${i + 1} - File data:`, JSON.stringify(file, null, 2));
+        console.log(`Expected MD5: ${expectedMD5}, DDEX filename: ${ddexFileName}`);
         
         try {
           console.log(`Downloading image file ${i + 1}/${imageFiles.length}: ${sourceUrl}`);
@@ -473,12 +543,14 @@ async function transferDeliveryFiles(deliveryId) {
           
           // Calculate MD5 of downloaded file
           const buffer = Buffer.from(response.data);
-          const calculatedMD5 = calculateMD5(buffer);
+          const calculatedMD5 = calculateMD5(buffer).toLowerCase();
+          
+          console.log(`Calculated MD5: ${calculatedMD5}`);
           
           // Validate MD5 if expected hash exists
           let md5Valid = null;
           if (expectedMD5) {
-            md5Valid = calculatedMD5.toLowerCase() === expectedMD5.toLowerCase();
+            md5Valid = calculatedMD5 === expectedMD5;
             if (!md5Valid) {
               console.warn(`MD5 mismatch for image file ${i + 1}: expected ${expectedMD5}, got ${calculatedMD5}`);
             } else {
@@ -486,9 +558,11 @@ async function transferDeliveryFiles(deliveryId) {
             }
           }
           
-          // Extract filename from URL or generate one
-          const fileName = extractFileName(sourceUrl) || `image_${i + 1}.jpg`;
+          // Use DDEX filename if available, otherwise extract from URL
+          const fileName = ddexFileName || extractFileName(sourceUrl) || `image_${i + 1}.jpg`;
           const storagePath = `${basePath}/images/${fileName}`;
+          
+          console.log(`Storing as: ${storagePath}`);
           
           // Upload to DSP's storage
           const file = bucket.file(storagePath);
@@ -502,7 +576,8 @@ async function transferDeliveryFiles(deliveryId) {
                 transferredAt: new Date().toISOString(),
                 md5Hash: calculatedMD5,
                 md5Valid: md5Valid !== null ? md5Valid.toString() : 'not_checked',
-                expectedMD5: expectedMD5 || 'none'
+                expectedMD5: expectedMD5 || 'none',
+                ddexFileName: ddexFileName || 'none'
               }
             }
           });
@@ -518,7 +593,7 @@ async function transferDeliveryFiles(deliveryId) {
             size: response.data.length,
             md5Hash: calculatedMD5,
             md5Valid: md5Valid,
-            expectedMD5: expectedMD5 || null  // Convert undefined to null
+            expectedMD5: expectedMD5 || null
           });
           
           console.log(`✅ Transferred image file: ${fileName} (${response.data.length} bytes, MD5: ${md5Valid ? 'VALID' : md5Valid === false ? 'INVALID' : 'NOT CHECKED'})`);
@@ -1242,6 +1317,54 @@ exports.debugDeliveryHistory = onRequest({
         firstLine: data.ernXml.split('\n')[0],
         hasMessageId: data.ernXml.includes('MessageId'),
         messageIdMatches: data.ernXml.match(/<MessageId[^>]*>([^<]+)<\/MessageId>/g)
+      } : null
+    });
+    
+  } catch (error) {
+    response.status(500).json({ error: error.message });
+  }
+});
+
+// Debug endpoint to inspect parsed data
+exports.debugParsedData = onRequest({
+  cors: true
+}, async (request, response) => {
+  try {
+    const { deliveryId } = request.query;
+    
+    if (!deliveryId) {
+      response.status(400).json({ error: 'Missing deliveryId' });
+      return;
+    }
+    
+    const doc = await admin.firestore()
+      .collection('deliveries')
+      .doc(deliveryId)
+      .get();
+    
+    if (!doc.exists) {
+      response.status(404).json({ error: 'Delivery not found' });
+      return;
+    }
+    
+    const data = doc.data();
+    const parsedData = data.parsedData || {};
+    const resourceList = parsedData.resourceList || {};
+    
+    // Extract first sound recording
+    const soundRecordings = resourceList.SoundRecording || resourceList.soundRecording || [];
+    const firstRecording = Array.isArray(soundRecordings) ? soundRecordings[0] : soundRecordings;
+    
+    response.json({
+      deliveryId: deliveryId,
+      hasResourceList: !!resourceList,
+      soundRecordingCount: Array.isArray(soundRecordings) ? soundRecordings.length : (soundRecordings ? 1 : 0),
+      firstSoundRecording: firstRecording ? {
+        hasDisplayArtist: !!firstRecording.DisplayArtist,
+        displayArtist: firstRecording.DisplayArtist,
+        displayArtistType: typeof firstRecording.DisplayArtist,
+        keys: Object.keys(firstRecording),
+        technicalDetails: firstRecording.TechnicalDetails
       } : null
     });
     

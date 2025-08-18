@@ -23,14 +23,17 @@ async function processReleases(deliveryId, releases, deliveryData) {
   
   try {
     for (const release of releases) {
-      const releaseId = release.ReleaseId?.GRid || generateReleaseId();
+      const releaseId = release.ReleaseId?.GRid || 
+                       release.RELEASEID?.GRID || 
+                       release.ReleaseId?.GRID || 
+                       generateReleaseId();
       
       logger.log(`Processing release: ${releaseId}`);
       
       // Process main release metadata
       const releaseDoc = {
         id: releaseId,
-        messageId: release.ReleaseReference,
+        messageId: release.ReleaseReference || release.RELEASEREFERENCE,
         sender: deliveryData.sender,
         
         metadata: {
@@ -40,16 +43,16 @@ async function processReleases(deliveryId, releases, deliveryData) {
           releaseDate: parseReleaseDate(release),
           genre: extractGenres(release),
           copyright: extractCopyright(release),
-          releaseType: release.ReleaseType || "Album",
-          totalTracks: release.ReleaseResourceReferenceList?.length || 0,
-          catalogNumber: release.CatalogNumber || null,
-          upc: release.ReleaseId?.ICPN || null
+          releaseType: release.ReleaseType || release.RELEASETYPE || "Album",
+          totalTracks: (release.ReleaseResourceReferenceList || release.RELEASERESOURCEREFERENCELIST)?.length || 0,
+          catalogNumber: release.CatalogNumber || release.CATALOGNUMBER || null,
+          upc: release.ReleaseId?.ICPN || release.RELEASEID?.ICPN || null
         },
         
         availability: {
           territories: extractTerritories(release),
-          startDate: parseDate(release.GlobalReleaseDate),
-          endDate: parseDate(release.GlobalEndDate),
+          startDate: parseDate(release.GlobalReleaseDate || release.GLOBALRELEASEDATE),
+          endDate: parseDate(release.GlobalEndDate || release.GLOBALENDDATE),
           tier: "all"
         },
         
@@ -115,30 +118,63 @@ async function processReleases(deliveryId, releases, deliveryData) {
 // Process individual tracks
 async function processTracks(release, releaseId, deliveryData) {
   const tracks = [];
-  const soundRecordings = release.ResourceList?.SoundRecording || release.ResourceList?.soundRecording || [];
   
-  // If ResourceList is at root level, use it
-  const resourceList = release.ResourceList || deliveryData.parsedData?.resourceList || {};
-  const allSoundRecordings = resourceList.SoundRecording || resourceList.soundRecording || soundRecordings;
+  // Handle uppercase keys from parser - check parsedData at root and nested levels
+  const parsedData = deliveryData.parsedData || {};
+  const resourceList = release.ResourceList || 
+                      release.RESOURCELIST || 
+                      parsedData.resourceList || 
+                      parsedData.ResourceList ||
+                      parsedData.RESOURCELIST || {};
+  
+  const soundRecordings = resourceList.SoundRecording || 
+                         resourceList.soundRecording || 
+                         resourceList.SOUNDRECORDING || [];
+  
+  const allSoundRecordings = Array.isArray(soundRecordings) ? soundRecordings : [soundRecordings];
   
   for (let index = 0; index < allSoundRecordings.length; index++) {
     const recording = allSoundRecordings[index];
-    const trackId = recording.SoundRecordingId?.ISRC || `${releaseId}_TRACK_${index + 1}`;
     
-    // Extract MD5 hash
+    // Handle uppercase keys for ISRC
+    const isrc = recording.SoundRecordingId?.ISRC || 
+                recording.SOUNDRECORDINGID?.ISRC || 
+                recording.ResourceId?.ISRC || 
+                recording.RESOURCEID?.ISRC;
+    
+    const trackId = isrc || `${releaseId}_TRACK_${index + 1}`;
+    
+    // Extract MD5 hash (handle uppercase)
     let md5Hash = null;
-    const technicalDetails = recording.TechnicalDetails || recording.technicalDetails;
-    if (technicalDetails?.File?.HashSum) {
-      const hashSum = technicalDetails.File.HashSum;
-      if (hashSum.HashSumAlgorithmType === 'MD5' && hashSum.HashSum) {
-        md5Hash = hashSum.HashSum;
+    const technicalDetails = recording.TechnicalDetails || 
+                           recording.technicalDetails || 
+                           recording.TECHNICALDETAILS || {};
+    
+    const file = technicalDetails.File || 
+                technicalDetails.file || 
+                technicalDetails.FILE || {};
+    
+    const hashSum = file.HashSum || 
+                   file.hashSum || 
+                   file.HASHSUM || {};
+    
+    if (hashSum) {
+      const hashType = hashSum.HashSumAlgorithmType || 
+                      hashSum.hashSumAlgorithmType || 
+                      hashSum.HASHSUMALGORITHMTYPE;
+      
+      const hashValue = hashSum.HashSum || 
+                       hashSum.hashSum || 
+                       hashSum.HASHSUM;
+      
+      if (hashType === 'MD5' && hashValue) {
+        md5Hash = hashValue;
       }
     }
     
     // Get audio file URL from transferred files if available
     let audioUrl = null;
     if (deliveryData.files?.transferred?.audio) {
-      // Try to match by index or filename
       const audioFile = deliveryData.files.transferred.audio[index];
       if (audioFile) {
         audioUrl = audioFile.publicUrl;
@@ -153,27 +189,26 @@ async function processTracks(release, releaseId, deliveryData) {
     const track = {
       id: trackId,
       releaseId,
-      isrc: recording.SoundRecordingId?.ISRC || null,
+      isrc: isrc || null,
       
       metadata: {
-        title: recording.ReferenceTitle?.TitleText || recording.Title?.TitleText || 
-               recording.DisplayTitleText || recording.displaytitletext || `Track ${index + 1}`,
+        title: extractTrackTitle(recording),
         displayArtist: extractRecordingArtist(recording) || extractArtist(release) || "Unknown Artist",
-        duration: parseDuration(recording.Duration),
-        trackNumber: recording.SequenceNumber || index + 1,
-        discNumber: recording.DiscNumber || 1,
+        duration: parseDuration(recording.Duration || recording.DURATION),
+        trackNumber: recording.SequenceNumber || recording.SEQUENCENUMBER || index + 1,
+        discNumber: recording.DiscNumber || recording.DISCNUMBER || 1,
         contributors: extractContributors(recording),
         genre: extractRecordingGenres(recording) || extractGenres(release),
-        language: recording.LanguageOfPerformance || recording.Language || null,
-        explicit: recording.ParentalWarningType === "Explicit"
+        language: recording.LanguageOfPerformance || recording.LANGUAGEOFPERFORMANCE || null,
+        explicit: (recording.ParentalWarningType || recording.PARENTALWARNINGTYPE) === "Explicit"
       },
       
       audio: {
         original: audioUrl,
-        format: recording.TechnicalDetails?.AudioCodecType || recording.TechnicalDetails?.AudioCodec || "MP3",
-        bitrate: recording.TechnicalDetails?.BitRate || null,
-        sampleRate: recording.TechnicalDetails?.SamplingRate || null,
-        md5Hash: md5Hash, // Store MD5 hash
+        format: technicalDetails.AudioCodecType || technicalDetails.AUDIOCODECTYPE || "MP3",
+        bitrate: technicalDetails.BitRate || technicalDetails.BITRATE || null,
+        sampleRate: technicalDetails.SamplingRate || technicalDetails.SAMPLINGRATE || null,
+        md5Hash: md5Hash,
         streams: {
           hls: `https://cdn.stardust-dsp.org/hls/${trackId}/master.m3u8`,
           dash: `https://cdn.stardust-dsp.org/dash/${trackId}/manifest.mpd`
@@ -183,8 +218,8 @@ async function processTracks(release, releaseId, deliveryData) {
       rights: {
         copyright: extractCopyright(recording),
         territories: extractTerritories(recording) || extractTerritories(release),
-        startDate: parseDate(recording.StartDate),
-        endDate: parseDate(recording.EndDate)
+        startDate: parseDate(recording.StartDate || recording.STARTDATE),
+        endDate: parseDate(recording.EndDate || recording.ENDDATE)
       },
       
       stats: {
@@ -209,9 +244,19 @@ async function processTracks(release, releaseId, deliveryData) {
 
 // Process artwork
 async function processArtwork(release, releaseId, deliveryData) {
-  const images = release.ResourceList?.Image || release.ResourceList?.image || [];
-  const resourceList = release.ResourceList || deliveryData.parsedData?.resourceList || {};
-  const allImages = resourceList.Image || resourceList.image || images;
+  // Handle uppercase keys from parser - check parsedData at root and nested levels
+  const parsedData = deliveryData.parsedData || {};
+  const resourceList = release.ResourceList || 
+                      release.RESOURCELIST || 
+                      parsedData.resourceList || 
+                      parsedData.ResourceList ||
+                      parsedData.RESOURCELIST || {};
+  
+  const images = resourceList.Image || 
+                resourceList.image || 
+                resourceList.IMAGE || [];
+  
+  const allImages = Array.isArray(images) ? images : [images];
   
   const artwork = {
     coverArt: null,
@@ -221,13 +266,31 @@ async function processArtwork(release, releaseId, deliveryData) {
   for (let index = 0; index < allImages.length; index++) {
     const image = allImages[index];
     
-    // Extract MD5 hash
+    // Extract MD5 hash (handle uppercase)
     let md5Hash = null;
-    const technicalDetails = image.TechnicalDetails || image.technicalDetails;
-    if (technicalDetails?.File?.HashSum) {
-      const hashSum = technicalDetails.File.HashSum;
-      if (hashSum.HashSumAlgorithmType === 'MD5' && hashSum.HashSum) {
-        md5Hash = hashSum.HashSum;
+    const technicalDetails = image.TechnicalDetails || 
+                           image.technicalDetails || 
+                           image.TECHNICALDETAILS || {};
+    
+    const file = technicalDetails.File || 
+                technicalDetails.file || 
+                technicalDetails.FILE || {};
+    
+    const hashSum = file.HashSum || 
+                   file.hashSum || 
+                   file.HASHSUM || {};
+    
+    if (hashSum) {
+      const hashType = hashSum.HashSumAlgorithmType || 
+                      hashSum.hashSumAlgorithmType || 
+                      hashSum.HASHSUMALGORITHMTYPE;
+      
+      const hashValue = hashSum.HashSum || 
+                       hashSum.hashSum || 
+                       hashSum.HASHSUM;
+      
+      if (hashType === 'MD5' && hashValue) {
+        md5Hash = hashValue;
       }
     }
     
@@ -242,20 +305,23 @@ async function processArtwork(release, releaseId, deliveryData) {
     
     // Fallback to generating URL
     if (!imageUrl) {
-      const imageType = image.ImageType || 'cover';
+      const imageType = image.ImageType || image.IMAGETYPE || 'cover';
       imageUrl = await getPublicUrl(`images/artwork/${releaseId}/${imageType}.jpg`);
     }
     
     const imageDoc = {
-      type: image.ImageType || 'Unknown',
+      type: image.ImageType || image.IMAGETYPE || 'Unknown',
       url: imageUrl,
-      width: image.TechnicalDetails?.ImageWidth || image.TechnicalDetails?.Width || null,
-      height: image.TechnicalDetails?.ImageHeight || image.TechnicalDetails?.Height || null,
-      format: image.TechnicalDetails?.ImageCodecType || image.TechnicalDetails?.ImageCodec || "JPEG",
-      md5Hash: md5Hash // Store MD5 hash
+      width: technicalDetails.ImageWidth || technicalDetails.IMAGEWIDTH || null,
+      height: technicalDetails.ImageHeight || technicalDetails.IMAGEHEIGHT || null,
+      format: technicalDetails.ImageCodecType || technicalDetails.IMAGECODECTYPE || "JPEG",
+      md5Hash: md5Hash
     };
     
-    if (image.ImageType === "FrontCoverImage" || (!artwork.coverArt && image.ImageType?.includes("Cover"))) {
+    const imageType = image.ImageType || image.IMAGETYPE || '';
+    if (imageType === "FrontCoverImage" || 
+        imageType === "FRONTCOVERIMAGE" || 
+        (!artwork.coverArt && imageType.toUpperCase().includes("COVER"))) {
       artwork.coverArt = {
         ...imageDoc,
         sizes: generateImageSizeUrls(imageUrl, releaseId)
@@ -271,7 +337,7 @@ async function processArtwork(release, releaseId, deliveryData) {
     artwork.coverArt = {
       type: "FrontCoverImage",
       url: placeholderUrl,
-      md5Hash: null, // No hash for placeholder
+      md5Hash: null,
       sizes: {
         small: await getPublicUrl("images/placeholder-small.jpg"),
         medium: await getPublicUrl("images/placeholder-medium.jpg"),
@@ -304,7 +370,7 @@ async function createAlbum(releaseDoc, tracks, artwork) {
     artwork: {
       cover: artwork.coverArt,
       additional: artwork.additional,
-      palette: null // Could extract colors here
+      palette: null
     },
     
     trackIds: tracks.map(t => t.id),
@@ -336,9 +402,17 @@ async function processArtists(release, releaseId) {
     artists.add(mainArtist);
   }
   
-  // Get track artists
-  const soundRecordings = release.ResourceList?.SoundRecording || [];
-  for (const recording of soundRecordings) {
+  // Get track artists (handle uppercase)
+  const resourceList = release.ResourceList || 
+                      release.RESOURCELIST || {};
+  
+  const soundRecordings = resourceList.SoundRecording || 
+                         resourceList.soundRecording || 
+                         resourceList.SOUNDRECORDING || [];
+  
+  const allSoundRecordings = Array.isArray(soundRecordings) ? soundRecordings : [soundRecordings];
+  
+  for (const recording of allSoundRecordings) {
     const trackArtist = extractRecordingArtist(recording);
     if (trackArtist && trackArtist !== "Unknown Artist") {
       artists.add(trackArtist);
@@ -426,86 +500,172 @@ function generateArtistId(artistName) {
 }
 
 function extractTitle(release) {
-  // ERN 4.3: Check DisplayTitleText first (direct under Release)
-  if (release.DisplayTitleText || release.displaytitletext) {
-    return release.DisplayTitleText || release.displaytitletext;
+  // Handle uppercase keys from parser
+  if (release.DisplayTitleText || release.displaytitletext || release.DISPLAYTITLETEXT) {
+    return release.DisplayTitleText || release.displaytitletext || release.DISPLAYTITLETEXT;
   }
   
-  // ERN 4.3: Check ReferenceTitle
-  if (release.ReferenceTitle?.TitleText) {
-    return release.ReferenceTitle.TitleText;
+  // Check ReferenceTitle with uppercase handling
+  const referenceTitle = release.ReferenceTitle || release.REFERENCETITLE;
+  if (referenceTitle) {
+    return referenceTitle.TitleText || referenceTitle.TITLETEXT || referenceTitle.titletext;
   }
   
   // ERN 3.x: Check ReleaseDetailsByTerritory
-  if (release.ReleaseDetailsByTerritory?.[0]?.Title?.TitleText) {
-    return release.ReleaseDetailsByTerritory[0].Title.TitleText;
+  const releaseDetails = release.ReleaseDetailsByTerritory || release.RELEASEDETAILSBYTERRITORY;
+  if (releaseDetails?.[0]) {
+    const title = releaseDetails[0].Title || releaseDetails[0].TITLE;
+    if (title) {
+      return title.TitleText || title.TITLETEXT || title.titletext;
+    }
   }
   
   return "Unknown Title";
 }
 
+function extractTrackTitle(recording) {
+  // Handle uppercase keys for track title
+  if (recording.DisplayTitleText || recording.DISPLAYTITLETEXT) {
+    return recording.DisplayTitleText || recording.DISPLAYTITLETEXT;
+  }
+  
+  const referenceTitle = recording.ReferenceTitle || recording.REFERENCETITLE;
+  if (referenceTitle) {
+    return referenceTitle.TitleText || referenceTitle.TITLETEXT || referenceTitle.titletext;
+  }
+  
+  const title = recording.Title || recording.TITLE;
+  if (title) {
+    return title.TitleText || title.TITLETEXT || title.titletext;
+  }
+  
+  return `Track ${recording.SequenceNumber || recording.SEQUENCENUMBER || ''}`;
+}
+
 function extractArtist(release) {
-  // ERN 4.3: Check DisplayArtist directly under Release
-  if (release.DisplayArtist) {
-    const artist = release.DisplayArtist;
-    return artist.PartyName?.FullName || 
-           artist.partyname?.fullname || 
-           artist.Name || 
-           artist.name ||
-           "Unknown Artist";
+  // Handle uppercase variations from parser
+  const displayArtist = release.DisplayArtist || 
+                        release.displayArtist || 
+                        release.DISPLAYARTIST;
+  
+  if (displayArtist) {
+    const partyName = displayArtist.PartyName || 
+                     displayArtist.partyName || 
+                     displayArtist.PARTYNAME ||
+                     displayArtist.partyname;
+    
+    if (partyName) {
+      const fullName = partyName.FullName || 
+                      partyName.fullName || 
+                      partyName.FULLNAME ||
+                      partyName.fullname;
+      if (fullName) return fullName;
+    }
+    
+    if (displayArtist.Name || displayArtist.name || displayArtist.NAME) {
+      return displayArtist.Name || displayArtist.name || displayArtist.NAME;
+    }
   }
   
   // ERN 3.x: Check ReleaseDetailsByTerritory
-  if (release.ReleaseDetailsByTerritory?.[0]?.DisplayArtist) {
-    const artist = release.ReleaseDetailsByTerritory[0].DisplayArtist;
-    return artist.PartyName?.FullName || artist.Name || "Unknown Artist";
+  const releaseDetails = release.ReleaseDetailsByTerritory || 
+                        release.releaseDetailsByTerritory || 
+                        release.RELEASEDETAILSBYTERRITORY;
+  
+  if (releaseDetails?.[0]) {
+    const firstTerritory = releaseDetails[0];
+    const displayArtist = firstTerritory.DisplayArtist || 
+                         firstTerritory.displayArtist || 
+                         firstTerritory.DISPLAYARTIST;
+    
+    if (displayArtist) {
+      const partyName = displayArtist.PartyName || displayArtist.PARTYNAME;
+      const fullName = partyName?.FullName || partyName?.FULLNAME;
+      if (fullName) return fullName;
+      
+      if (displayArtist.Name || displayArtist.NAME) {
+        return displayArtist.Name || displayArtist.NAME;
+      }
+    }
   }
   
   return "Unknown Artist";
 }
 
 function extractRecordingArtist(recording) {
-  // ERN 4.3: Check DisplayArtist directly under SoundRecording
-  if (recording.DisplayArtist) {
-    const artist = recording.DisplayArtist;
-    // Handle nested PartyName structure
-    if (artist.PartyName?.FullName) {
-      return artist.PartyName.FullName;
+  // Handle uppercase variations from parser
+  const displayArtist = recording.DisplayArtist || 
+                        recording.displayArtist || 
+                        recording.DISPLAYARTIST;
+  
+  if (displayArtist) {
+    // Handle nested PartyName structure with all case variations
+    const partyName = displayArtist.PartyName || 
+                     displayArtist.partyName || 
+                     displayArtist.PARTYNAME ||
+                     displayArtist.partyname;
+    
+    if (partyName) {
+      const fullName = partyName.FullName || 
+                      partyName.fullName || 
+                      partyName.FULLNAME ||
+                      partyName.fullname;
+      if (fullName) return fullName;
     }
-    if (artist.partyname?.fullname) {
-      return artist.partyname.fullname;
+    
+    // Direct name properties
+    if (displayArtist.Name || displayArtist.name || displayArtist.NAME) {
+      return displayArtist.Name || displayArtist.name || displayArtist.NAME;
     }
-    if (artist.Name || artist.name) {
-      return artist.Name || artist.name;
-    }
+    
     // If DisplayArtist is a string
-    if (typeof artist === 'string') {
-      return artist;
+    if (typeof displayArtist === 'string') {
+      return displayArtist;
     }
   }
   
-  // Fallback to Contributor if no DisplayArtist
-  if (recording.Contributor) {
-    const contributors = Array.isArray(recording.Contributor) ? recording.Contributor : [recording.Contributor];
-    const mainContributor = contributors.find(c => c.Role === 'MainArtist') || contributors[0];
-    if (mainContributor?.PartyName?.FullName) {
-      return mainContributor.PartyName.FullName;
+  // Fallback to Contributor
+  const contributor = recording.Contributor || 
+                     recording.contributor || 
+                     recording.CONTRIBUTOR;
+  
+  if (contributor) {
+    const contributors = Array.isArray(contributor) ? contributor : [contributor];
+    const mainContributor = contributors.find(c => 
+      c.Role === 'MainArtist' || c.ROLE === 'MainArtist' || c.role === 'MainArtist'
+    ) || contributors[0];
+    
+    if (mainContributor) {
+      const partyName = mainContributor.PartyName || 
+                       mainContributor.partyName || 
+                       mainContributor.PARTYNAME;
+      
+      if (partyName) {
+        const fullName = partyName.FullName || 
+                        partyName.fullName || 
+                        partyName.FULLNAME;
+        if (fullName) return fullName;
+      }
     }
   }
   
-  return null; // Don't return "Unknown Artist" here, let the caller handle it
+  return null;
 }
 
 function extractLabel(release) {
-  // ERN 4.3: Check LabelName directly under Release
-  if (release.LabelName || release.labelname) {
-    const labelName = release.LabelName || release.labelname;
+  // Handle uppercase keys
+  const labelName = release.LabelName || 
+                   release.labelname || 
+                   release.LABELNAME;
+  
+  if (labelName) {
     return Array.isArray(labelName) ? labelName[0] : labelName;
   }
   
   // ERN 3.x: Check ReleaseDetailsByTerritory
-  if (release.ReleaseDetailsByTerritory?.[0]?.LabelName) {
-    const labelName = release.ReleaseDetailsByTerritory[0].LabelName;
+  const releaseDetails = release.ReleaseDetailsByTerritory || release.RELEASEDETAILSBYTERRITORY;
+  if (releaseDetails?.[0]) {
+    const labelName = releaseDetails[0].LabelName || releaseDetails[0].LABELNAME;
     return Array.isArray(labelName) ? labelName[0] : labelName;
   }
   
@@ -515,51 +675,86 @@ function extractLabel(release) {
 function extractGenres(release) {
   let genres = [];
   
-  // ERN 4.3: Check Genre directly under Release
-  if (release.Genre || release.genre) {
-    genres = release.Genre || release.genre;
-  }
+  // Handle uppercase keys
+  genres = release.Genre || release.genre || release.GENRE;
+  
   // ERN 3.x: Check ReleaseDetailsByTerritory
-  else if (release.ReleaseDetailsByTerritory?.[0]?.Genre) {
-    genres = release.ReleaseDetailsByTerritory[0].Genre;
+  if (!genres) {
+    const releaseDetails = release.ReleaseDetailsByTerritory || release.RELEASEDETAILSBYTERRITORY;
+    if (releaseDetails?.[0]) {
+      genres = releaseDetails[0].Genre || releaseDetails[0].GENRE;
+    }
+  }
+  
+  // Return empty array if no genres found
+  if (!genres) {
+    return [];
   }
   
   const genreList = Array.isArray(genres) ? genres : [genres];
-  return genreList.map(g => g.GenreText || g.genretext || g).filter(Boolean);
+  
+  // Filter out undefined/null values and safely extract genre text
+  return genreList
+    .filter(g => g != null) // Filter out null and undefined
+    .map(g => {
+      if (typeof g === 'string') return g;
+      if (g && typeof g === 'object') {
+        return g.GenreText || g.genretext || g.GENRETEXT || null;
+      }
+      return null;
+    })
+    .filter(Boolean); // Remove any null values
 }
 
 function extractRecordingGenres(recording) {
-  const genres = recording.Genre || [];
+  const genres = recording.Genre || recording.GENRE || [];
+  
+  if (!genres) {
+    return [];
+  }
+  
   const genreList = Array.isArray(genres) ? genres : [genres];
-  return genreList.map(g => g.GenreText || g).filter(Boolean);
+  
+  // Filter out undefined/null values and safely extract genre text
+  return genreList
+    .filter(g => g != null) // Filter out null and undefined
+    .map(g => {
+      if (typeof g === 'string') return g;
+      if (g && typeof g === 'object') {
+        return g.GenreText || g.GENRETEXT || g.genretext || null;
+      }
+      return null;
+    })
+    .filter(Boolean); // Remove any null values
 }
 
 function extractCopyright(item) {
   const copyrights = [];
   
-  // Check both CLine and PLine with case variations
-  const clines = item.CLine || item.cline || [];
+  // Handle uppercase keys for CLine
+  const clines = item.CLine || item.cline || item.CLINE || [];
   const clineArray = Array.isArray(clines) ? clines : [clines];
   
   clineArray.forEach(c => {
     if (c) {
       copyrights.push({
         type: "C",
-        text: c.CLineText || c.clinetext || c,
-        year: c.Year || c.year || null
+        text: c.CLineText || c.clinetext || c.CLINETEXT || c,
+        year: c.Year || c.year || c.YEAR || null
       });
     }
   });
   
-  const plines = item.PLine || item.pline || [];
+  // Handle uppercase keys for PLine
+  const plines = item.PLine || item.pline || item.PLINE || [];
   const plineArray = Array.isArray(plines) ? plines : [plines];
   
   plineArray.forEach(p => {
     if (p) {
       copyrights.push({
         type: "P",
-        text: p.PLineText || p.plinetext || p,
-        year: p.Year || p.year || null
+        text: p.PLineText || p.plinetext || p.PLINETEXT || p,
+        year: p.Year || p.year || p.YEAR || null
       });
     }
   });
@@ -570,8 +765,11 @@ function extractCopyright(item) {
 function extractTerritories(item) {
   if (!item) return ["Worldwide"];
   
-  const territories = item.ReleaseDetailsByTerritory?.map(d => d.TerritoryCode) || 
+  // Handle uppercase keys
+  const releaseDetails = item.ReleaseDetailsByTerritory || item.RELEASEDETAILSBYTERRITORY;
+  const territories = releaseDetails?.map(d => d.TerritoryCode || d.TERRITORYCODE) || 
                      item.TerritoryCode || 
+                     item.TERRITORYCODE || 
                      [];
   
   const territoryList = Array.isArray(territories) ? territories : [territories];
@@ -581,11 +779,14 @@ function extractTerritories(item) {
 function extractContributors(recording) {
   const contributors = [];
   
-  if (recording.Contributor) {
-    const contribList = Array.isArray(recording.Contributor) ? recording.Contributor : [recording.Contributor];
+  // Handle uppercase keys
+  const contributor = recording.Contributor || recording.CONTRIBUTOR;
+  
+  if (contributor) {
+    const contribList = Array.isArray(contributor) ? contributor : [contributor];
     contributors.push(...contribList.map(c => ({
-      name: c.PartyName?.FullName || c.Name,
-      role: c.Role || "Performer"
+      name: c.PartyName?.FullName || c.PARTYNAME?.FULLNAME || c.Name || c.NAME,
+      role: c.Role || c.ROLE || "Performer"
     })));
   }
   
@@ -593,14 +794,19 @@ function extractContributors(recording) {
 }
 
 function parseReleaseDate(release) {
-  // ERN 4.3: Check direct date fields
+  // Handle uppercase keys
   const dateStr = release.OriginalReleaseDate || 
                   release.originalreleasedate ||
+                  release.ORIGINALRELEASEDATE ||
                   release.ReleaseDate || 
                   release.releasedate ||
+                  release.RELEASEDATE ||
                   release.GlobalOriginalReleaseDate || 
+                  release.GLOBALORIGINALRELEASEDATE ||
                   release.GlobalReleaseDate || 
+                  release.GLOBALRELEASEDATE ||
                   release.ReleaseDetailsByTerritory?.[0]?.ReleaseDate ||
+                  release.RELEASEDETAILSBYTERRITORY?.[0]?.RELEASEDATE ||
                   new Date().toISOString();
   
   try {
