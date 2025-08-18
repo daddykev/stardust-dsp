@@ -38,18 +38,18 @@ const features = [
 ]
 
 const codeExample = ref(`# Deploy your streaming platform
-npx create-ddex-dsp my-streaming-service
-cd my-streaming-service
+npx stardust-dsp my-platform
+cd my-platform
 npm run deploy
 
-# Streaming platform live at https://my-streaming-service.app`)
+# Streaming platform live at https://my-platform.com`)
 
 const handleGetStarted = () => {
   router.push('/signup')
 }
 
 const handleViewDemo = () => {
-  window.open('https://demo.ddex-dsp.org', '_blank')
+  window.open('https://demo.stardust-dsp.org', '_blank')
 }
 
 const handleViewDocs = () => {
@@ -84,7 +84,7 @@ const copyCode = () => {
           <p class="hero-description">
             Stardust DSP is an open-source, npm-installable streaming platform that receives 
             DDEX deliveries, processes them into a searchable catalog, and provides a 
-            complete music streaming experience. Perfect for testing or production.
+            complete music streaming experience.
           </p>
           
           <div class="hero-actions">
