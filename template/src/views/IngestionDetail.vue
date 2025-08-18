@@ -289,6 +289,10 @@
                     <font-awesome-icon icon="music" />
                     <span class="file-name">{{ file.fileName }}</span>
                     <span class="file-size">{{ formatFileSize(file.size) }}</span>
+                    <span v-if="file.md5Valid !== undefined" class="md5-status" :class="{ valid: file.md5Valid, invalid: !file.md5Valid }">
+                      <font-awesome-icon :icon="file.md5Valid ? 'check-circle' : 'times-circle'" />
+                      MD5 {{ file.md5Valid ? 'Valid' : 'Invalid' }}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -301,9 +305,14 @@
                     <font-awesome-icon icon="image" />
                     <span class="file-name">{{ file.fileName }}</span>
                     <span class="file-size">{{ formatFileSize(file.size) }}</span>
+                    <span v-if="file.md5Valid !== undefined" class="md5-status" :class="{ valid: file.md5Valid, invalid: !file.md5Valid }">
+                      <font-awesome-icon :icon="file.md5Valid ? 'check-circle' : 'times-circle'" />
+                      MD5 {{ file.md5Valid ? 'Valid' : 'Invalid' }}
+                    </span>                    
                   </div>
                 </div>
               </div>
+
             </div>
           </div>
         </div>
@@ -1797,6 +1806,27 @@ onUnmounted(() => {
   border-radius: 50%;
   animation: spin 1s linear infinite;
   margin-bottom: var(--space-md);
+}
+
+.md5-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  margin-left: auto;
+}
+
+.md5-status.valid {
+  background-color: rgba(52, 168, 83, 0.1);
+  color: var(--color-success);
+}
+
+.md5-status.invalid {
+  background-color: rgba(234, 67, 53, 0.1);
+  color: var(--color-error);
 }
 
 @keyframes spin {

@@ -125,6 +125,16 @@ async function processTracks(release, releaseId, deliveryData) {
     const recording = allSoundRecordings[index];
     const trackId = recording.SoundRecordingId?.ISRC || `${releaseId}_TRACK_${index + 1}`;
     
+    // Extract MD5 hash
+    let md5Hash = null;
+    const technicalDetails = recording.TechnicalDetails || recording.technicalDetails;
+    if (technicalDetails?.File?.HashSum) {
+      const hashSum = technicalDetails.File.HashSum;
+      if (hashSum.HashSumAlgorithmType === 'MD5' && hashSum.HashSum) {
+        md5Hash = hashSum.HashSum;
+      }
+    }
+    
     // Get audio file URL from transferred files if available
     let audioUrl = null;
     if (deliveryData.files?.transferred?.audio) {
@@ -146,22 +156,24 @@ async function processTracks(release, releaseId, deliveryData) {
       isrc: recording.SoundRecordingId?.ISRC || null,
       
       metadata: {
-        title: recording.ReferenceTitle?.TitleText || recording.Title?.TitleText || `Track ${index + 1}`,
-        displayArtist: extractRecordingArtist(recording) || extractArtist(release),
+        title: recording.ReferenceTitle?.TitleText || recording.Title?.TitleText || 
+               recording.DisplayTitleText || recording.displaytitletext || `Track ${index + 1}`,
+        displayArtist: extractRecordingArtist(recording) || extractArtist(release) || "Unknown Artist",
         duration: parseDuration(recording.Duration),
         trackNumber: recording.SequenceNumber || index + 1,
         discNumber: recording.DiscNumber || 1,
         contributors: extractContributors(recording),
         genre: extractRecordingGenres(recording) || extractGenres(release),
-        language: recording.Language || null,
+        language: recording.LanguageOfPerformance || recording.Language || null,
         explicit: recording.ParentalWarningType === "Explicit"
       },
       
       audio: {
         original: audioUrl,
-        format: recording.TechnicalDetails?.AudioCodec || "MP3",
+        format: recording.TechnicalDetails?.AudioCodecType || recording.TechnicalDetails?.AudioCodec || "MP3",
         bitrate: recording.TechnicalDetails?.BitRate || null,
         sampleRate: recording.TechnicalDetails?.SamplingRate || null,
+        md5Hash: md5Hash, // Store MD5 hash
         streams: {
           hls: `https://cdn.stardust-dsp.org/hls/${trackId}/master.m3u8`,
           dash: `https://cdn.stardust-dsp.org/dash/${trackId}/manifest.mpd`
@@ -189,7 +201,7 @@ async function processTracks(release, releaseId, deliveryData) {
     await db.collection("tracks").doc(track.id).set(track);
     tracks.push(track);
     
-    logger.log(`Track processed: ${track.id} - ${track.metadata.title}`);
+    logger.log(`Track processed: ${track.id} - ${track.metadata.title} by ${track.metadata.displayArtist}`);
   }
   
   return tracks;
@@ -209,6 +221,16 @@ async function processArtwork(release, releaseId, deliveryData) {
   for (let index = 0; index < allImages.length; index++) {
     const image = allImages[index];
     
+    // Extract MD5 hash
+    let md5Hash = null;
+    const technicalDetails = image.TechnicalDetails || image.technicalDetails;
+    if (technicalDetails?.File?.HashSum) {
+      const hashSum = technicalDetails.File.HashSum;
+      if (hashSum.HashSumAlgorithmType === 'MD5' && hashSum.HashSum) {
+        md5Hash = hashSum.HashSum;
+      }
+    }
+    
     // Get image file URL from transferred files if available
     let imageUrl = null;
     if (deliveryData.files?.transferred?.images) {
@@ -227,9 +249,10 @@ async function processArtwork(release, releaseId, deliveryData) {
     const imageDoc = {
       type: image.ImageType || 'Unknown',
       url: imageUrl,
-      width: image.TechnicalDetails?.Width || null,
-      height: image.TechnicalDetails?.Height || null,
-      format: image.TechnicalDetails?.ImageCodec || "JPEG"
+      width: image.TechnicalDetails?.ImageWidth || image.TechnicalDetails?.Width || null,
+      height: image.TechnicalDetails?.ImageHeight || image.TechnicalDetails?.Height || null,
+      format: image.TechnicalDetails?.ImageCodecType || image.TechnicalDetails?.ImageCodec || "JPEG",
+      md5Hash: md5Hash // Store MD5 hash
     };
     
     if (image.ImageType === "FrontCoverImage" || (!artwork.coverArt && image.ImageType?.includes("Cover"))) {
@@ -248,6 +271,7 @@ async function processArtwork(release, releaseId, deliveryData) {
     artwork.coverArt = {
       type: "FrontCoverImage",
       url: placeholderUrl,
+      md5Hash: null, // No hash for placeholder
       sizes: {
         small: await getPublicUrl("images/placeholder-small.jpg"),
         medium: await getPublicUrl("images/placeholder-medium.jpg"),
@@ -438,6 +462,38 @@ function extractArtist(release) {
   }
   
   return "Unknown Artist";
+}
+
+function extractRecordingArtist(recording) {
+  // ERN 4.3: Check DisplayArtist directly under SoundRecording
+  if (recording.DisplayArtist) {
+    const artist = recording.DisplayArtist;
+    // Handle nested PartyName structure
+    if (artist.PartyName?.FullName) {
+      return artist.PartyName.FullName;
+    }
+    if (artist.partyname?.fullname) {
+      return artist.partyname.fullname;
+    }
+    if (artist.Name || artist.name) {
+      return artist.Name || artist.name;
+    }
+    // If DisplayArtist is a string
+    if (typeof artist === 'string') {
+      return artist;
+    }
+  }
+  
+  // Fallback to Contributor if no DisplayArtist
+  if (recording.Contributor) {
+    const contributors = Array.isArray(recording.Contributor) ? recording.Contributor : [recording.Contributor];
+    const mainContributor = contributors.find(c => c.Role === 'MainArtist') || contributors[0];
+    if (mainContributor?.PartyName?.FullName) {
+      return mainContributor.PartyName.FullName;
+    }
+  }
+  
+  return null; // Don't return "Unknown Artist" here, let the caller handle it
 }
 
 function extractLabel(release) {
