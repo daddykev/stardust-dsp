@@ -105,7 +105,6 @@ function detectERNVersionFromXML(xmlString) {
 
 /**
  * Parse ERN XML and extract release information
- * Direct function - no longer Pub/Sub triggered
  */
 async function parseERN(deliveryId, ernXml) {
   logger.log(`Parsing ERN for delivery: ${deliveryId}`);
@@ -129,14 +128,13 @@ async function parseERN(deliveryId, ernXml) {
     const sanitizedXml = sanitizeXML(ernXml);
     
     // Parse XML with options optimized for ERN 4.3
-    // IMPORTANT: normalize must be false to preserve casing
     const parser = new xml2js.Parser({
       explicitArray: false,
       ignoreAttrs: false,
-      tagNameProcessors: [xml2js.processors.stripPrefix], // Remove namespace prefixes
+      tagNameProcessors: [xml2js.processors.stripPrefix],
       strict: false,
-      normalize: false,  // CHANGED: Don't normalize to uppercase
-      normalizeTags: false, // Keep original casing for ERN 4.3
+      normalize: false,
+      normalizeTags: false,
       preserveChildrenOrder: false,
       explicitRoot: true,
       attrkey: '$',
@@ -150,7 +148,6 @@ async function parseERN(deliveryId, ernXml) {
     } catch (parseError) {
       logger.warn(`Initial parse failed, trying recovery mode: ${parseError.message}`);
       
-      // Try to extract just the content between the root tags
       const rootMatch = sanitizedXml.match(/<(NewReleaseMessage|ReleaseNotification|ERN)[^>]*>([\s\S]*)<\/\1>/i);
       if (rootMatch) {
         const cleanedXml = `<?xml version="1.0" encoding="UTF-8"?><${rootMatch[1]}>${rootMatch[2]}</${rootMatch[1]}>`;
@@ -160,31 +157,36 @@ async function parseERN(deliveryId, ernXml) {
       }
     }
     
-    // Get the root element (could be NewReleaseMessage or other)
+    // Get the root element - could be NewReleaseMessage or other
     const rootKey = Object.keys(ernData)[0];
     const rootData = ernData[rootKey];
     
-    logger.log(`Root element: ${rootKey}`);
-    logger.log(`Root data keys: ${Object.keys(rootData).join(', ')}`);
+    // Convert all root keys to uppercase for consistency
+    const uppercaseRootData = {};
+    for (const [key, value] of Object.entries(rootData)) {
+      uppercaseRootData[key.toUpperCase()] = value;
+    }
+    
+    logger.log(`Root element: ${rootKey.toUpperCase()}`);
+    logger.log(`Root data keys: ${Object.keys(uppercaseRootData).join(', ')}`);
     
     // Extract ERN profile
-    const ernProfile = detectERNProfile(rootData, detectedVersion);
+    const ernProfile = detectERNProfile(uppercaseRootData, detectedVersion);
     
     // Extract releases using improved logic
-    const releases = extractReleases(rootData, detectedVersion);
+    const releases = extractReleases(uppercaseRootData, detectedVersion);
     
     logger.log(`Found ${releases.length} releases`);
     
-    // Build ERN metadata object - case sensitive access
-    const messageHeader = rootData.MessageHeader || rootData.messageheader || rootData.MESSAGEHEADER || {};
-    const messageSender = messageHeader.MessageSender || messageHeader.messagesender || messageHeader.MESSAGESENDER || {};
-    const partyName = messageSender.PartyName || messageSender.partyname || messageSender.PARTYNAME || {};
+    // Build ERN metadata object
+    const messageHeader = uppercaseRootData.MESSAGEHEADER || {};
+    const messageSender = messageHeader.MessageSender || messageHeader.MESSAGESENDER || {};
+    const partyName = messageSender.PartyName || messageSender.PARTYNAME || {};
     
-    // Extract parsed messageId but preserve original delivery messageId
-    const parsedMessageId = messageHeader.MessageId || messageHeader.messageid || messageHeader.MESSAGEID || null;
+    const parsedMessageId = messageHeader.MessageId || messageHeader.MESSAGEID || null;
     
     logger.log(`DEBUG: Original messageId: ${originalData.messageId}, Parsed messageId: ${parsedMessageId}`);
-    logger.log(`DEBUG: MessageHeader keys: ${Object.keys(messageHeader).join(', ')}`);
+    logger.log(`DEBUG: MessageHeader keys: ${Object.keys(messageHeader).map(k => k.toUpperCase()).join(', ')}`);
     
     const ernMetadata = {
       version: detectedVersion,
@@ -194,63 +196,57 @@ async function parseERN(deliveryId, ernXml) {
       parsedMessageId: parsedMessageId
     };
     
-    // Only add optional fields if they exist
-    if (messageHeader.MessageCreatedDateTime || messageHeader.messagecreateddatetime || messageHeader.MESSAGECREATEDDATETIME) {
-      ernMetadata.messageCreatedDateTime = messageHeader.MessageCreatedDateTime || messageHeader.messagecreateddatetime || messageHeader.MESSAGECREATEDDATETIME;
+    if (messageHeader.MessageCreatedDateTime || messageHeader.MESSAGECREATEDDATETIME) {
+      ernMetadata.messageCreatedDateTime = messageHeader.MessageCreatedDateTime || messageHeader.MESSAGECREATEDDATETIME;
     }
     
-    // Build message sender object
     const messageSenderData = {};
-    if (messageSender.PartyId || messageSender.partyid || messageSender.PARTYID) {
-      messageSenderData.partyId = messageSender.PartyId || messageSender.partyid || messageSender.PARTYID;
+    if (messageSender.PartyId || messageSender.PARTYID) {
+      messageSenderData.partyId = messageSender.PartyId || messageSender.PARTYID;
     }
-    if (partyName.FullName || partyName.fullname || partyName.FULLNAME) {
-      messageSenderData.partyName = partyName.FullName || partyName.fullname || partyName.FULLNAME;
+    if (partyName.FullName || partyName.FULLNAME) {
+      messageSenderData.partyName = partyName.FullName || partyName.FULLNAME;
     }
     
-    // Only add messageSender if it has data
     if (Object.keys(messageSenderData).length > 0) {
       ernMetadata.messageSender = messageSenderData;
     }
     
-    // Clean the parsed data for Firestore
+    // Clean and prepare parsed data for Firestore
     const parsedDataToStore = {
       releases: cleanForFirestore(releases),
-      resourceList: cleanForFirestore(rootData.ResourceList || rootData.resourcelist || rootData.RESOURCELIST),
-      dealList: cleanForFirestore(rootData.DealList || rootData.deallist || rootData.DEALLIST),
-      messageHeader: cleanForFirestore(messageHeader)
+      RESOURCELIST: cleanForFirestore(uppercaseRootData.RESOURCELIST),
+      DEALLIST: cleanForFirestore(uppercaseRootData.DEALLIST),
+      MESSAGEHEADER: cleanForFirestore(uppercaseRootData.MESSAGEHEADER)
     };
     
     // Remove null/undefined fields from parsedData
     const cleanedParsedData = {};
-    if (parsedDataToStore.releases) cleanedParsedData.releases = parsedDataToStore.releases;
-    if (parsedDataToStore.resourceList) cleanedParsedData.resourceList = parsedDataToStore.resourceList;
-    if (parsedDataToStore.dealList) cleanedParsedData.dealList = parsedDataToStore.dealList;
-    if (parsedDataToStore.messageHeader) cleanedParsedData.messageHeader = parsedDataToStore.messageHeader;
+    for (const [key, value] of Object.entries(parsedDataToStore)) {
+      if (value !== null && value !== undefined) {
+        cleanedParsedData[key] = value;
+      }
+    }
     
     // Store parsed data with debug information
     const updateData = {
       ern: ernMetadata,
+      parsedData: cleanedParsedData,  // Store the parsed data
       "processing.parsedAt": admin.firestore.FieldValue.serverTimestamp(),
-      // Add debug info to track ID preservation and version detection
       "debug.parsing": {
         originalMessageId: originalData.messageId,
         parsedMessageId: parsedMessageId,
         finalMessageId: ernMetadata.messageId,
         preservedOriginal: !!originalData.messageId,
         detectedVersion: detectedVersion,
-        rootElement: rootKey,
+        rootElement: rootKey.toUpperCase(),
         releaseCount: releases.length,
-        hasMessageHeader: !!(messageHeader && (messageHeader.MessageId || messageHeader.messageid || messageHeader.MESSAGEID)),
+        hasMessageHeader: !!uppercaseRootData.MESSAGEHEADER,
         hasReleaseList: releases.length > 0,
+        hasResourceList: !!uppercaseRootData.RESOURCELIST,
         timestamp: admin.firestore.FieldValue.serverTimestamp()
       }
     };
-    
-    // Only add parsedData if it has content
-    if (Object.keys(cleanedParsedData).length > 0) {
-      updateData.parsedData = cleanedParsedData;
-    }
     
     await db.collection("deliveries").doc(deliveryId).update(updateData);
     
@@ -261,7 +257,7 @@ async function parseERN(deliveryId, ernXml) {
     return { 
       success: true, 
       releases: releases,
-      ernData: rootData,
+      ernData: uppercaseRootData,
       ernVersion: detectedVersion
     };
     
@@ -274,13 +270,6 @@ async function parseERN(deliveryId, ernXml) {
       snippet: error.snippet
     });
     
-    // Store a sample of the problematic XML for debugging
-    if (ernXml && error.line) {
-      const lines = ernXml.split('\n');
-      const problemLine = lines[error.line - 1]; // Convert to 0-indexed
-      logger.error(`Problem line (${error.line}): ${problemLine?.substring(Math.max(0, error.column - 20), error.column + 20)}`);
-    }
-    
     await db.collection("deliveries").doc(deliveryId).update({
       "processing.status": "parse_failed",
       "processing.error": error.message,
@@ -290,6 +279,74 @@ async function parseERN(deliveryId, ernXml) {
     
     throw error;
   }
+}
+
+// Fixed extractReleases function
+function extractReleases(ernData, ernVersion) {
+  let releases = [];
+  
+  logger.log("Extracting releases from parsed data");
+  logger.log("Available root keys:", Object.keys(ernData || {}));
+  
+  // Look for ReleaseList - should be in UPPERCASE now
+  const releaseList = ernData.RELEASELIST || ernData.ReleaseList;
+  
+  if (releaseList) {
+    logger.log("Found ReleaseList with keys:", Object.keys(releaseList));
+    
+    const releaseData = releaseList.RELEASE || releaseList.Release;
+    
+    if (releaseData) {
+      releases = Array.isArray(releaseData) ? releaseData : [releaseData];
+      logger.log(`Found ${releases.length} releases in ReleaseList`);
+    }
+  }
+  
+  if (releases.length === 0) {
+    logger.warn("No releases found in expected locations");
+  }
+  
+  return releases.map((release, index) => {
+    const mappedRelease = {};
+    
+    logger.log(`Processing release ${index + 1}:`, Object.keys(release || {}).map(k => k.toUpperCase()));
+    
+    // Map release properties with UPPERCASE keys
+    if (release.ReleaseId || release.RELEASEID) {
+      mappedRelease.RELEASEID = release.ReleaseId || release.RELEASEID;
+      
+      // Log the ICPN structure
+      const releaseId = mappedRelease.RELEASEID;
+      if (releaseId) {
+        logger.log(`ReleaseId structure:`, JSON.stringify(releaseId));
+        if (releaseId.ICPN) {
+          // Extract the actual ICPN value for logging
+          let icpnValue = releaseId.ICPN;
+          if (typeof icpnValue === 'object' && icpnValue._) {
+            icpnValue = icpnValue._;
+          }
+          logger.log(`Found ICPN: ${icpnValue}`);
+        }
+      }
+    }
+    
+    // Map all other properties with UPPERCASE
+    mappedRelease.RELEASEREFERENCE = release.ReleaseReference || release.RELEASEREFERENCE;
+    mappedRelease.RELEASETYPE = release.ReleaseType || release.RELEASETYPE;
+    mappedRelease.RELEASEDETAILSBYTERRITORY = release.ReleaseDetailsByTerritory || release.RELEASEDETAILSBYTERRITORY;
+    mappedRelease.REFERENCETITLE = release.ReferenceTitle || release.REFERENCETITLE;
+    mappedRelease.DISPLAYTITLETEXT = release.DisplayTitleText || release.DISPLAYTITLETEXT;
+    mappedRelease.DISPLAYARTIST = release.DisplayArtist || release.DISPLAYARTIST;
+    mappedRelease.RELEASERESOURCEREFERENCELIST = release.ReleaseResourceReferenceList || release.RELEASERESOURCEREFERENCELIST;
+    mappedRelease.LABELNAME = release.LabelName || release.LABELNAME;
+    mappedRelease.GENRE = release.Genre || release.GENRE;
+    mappedRelease.PLINE = release.PLine || release.PLINE;
+    mappedRelease.CLINE = release.CLine || release.CLINE;
+    mappedRelease.RELEASEDATE = release.ReleaseDate || release.RELEASEDATE;
+    mappedRelease.ORIGINALRELEASEDATE = release.OriginalReleaseDate || release.ORIGINALRELEASEDATE;
+    
+    return mappedRelease;
+  });
 }
 
 function detectERNProfile(ernData, ernVersion) {
@@ -319,91 +376,6 @@ function detectERNProfile(ernData, ernVersion) {
   }
   
   return "AudioAlbumMusicOnly";
-}
-
-// Updated extractReleases function to handle ERN 4.3 structure with case sensitivity
-function extractReleases(ernData, ernVersion) {
-  let releases = [];
-  
-  logger.log("Extracting releases from parsed data");
-  logger.log("Available root keys:", Object.keys(ernData || {}));
-  
-  // ERN 4.3 structure - look for ReleaseList with case variations
-  const releaseList = ernData.ReleaseList || ernData.releaselist || ernData.RELEASELIST;
-  
-  if (releaseList) {
-    logger.log("Found ReleaseList with keys:", Object.keys(releaseList));
-    
-    const releaseData = releaseList.Release || releaseList.release || releaseList.RELEASE;
-    
-    if (releaseData) {
-      releases = Array.isArray(releaseData) ? releaseData : [releaseData];
-      logger.log(`Found ${releases.length} releases in ReleaseList`);
-    }
-  }
-  
-  // If still no releases, try nested under NewReleaseMessage (ERN 3.x)
-  if (releases.length === 0) {
-    const nestedMessage = ernData.NewReleaseMessage || ernData.newreleasemessage || ernData.NEWRELEASEMESSAGE;
-    if (nestedMessage) {
-      const nestedReleaseList = nestedMessage.ReleaseList || nestedMessage.releaselist || nestedMessage.RELEASELIST;
-      if (nestedReleaseList) {
-        const nestedReleases = nestedReleaseList.Release || nestedReleaseList.release || nestedReleaseList.RELEASE;
-        if (nestedReleases) {
-          releases = Array.isArray(nestedReleases) ? nestedReleases : [nestedReleases];
-          logger.log(`Found ${releases.length} releases in nested structure`);
-        }
-      }
-    }
-  }
-  
-  if (releases.length === 0) {
-    logger.warn("No releases found in expected locations");
-  }
-  
-  return releases.map((release, index) => {
-    const mappedRelease = {};
-    
-    logger.log(`Processing release ${index + 1}:`, Object.keys(release || {}));
-    
-    // Map release properties with case variations
-    if (release.ReleaseId || release.releaseid || release.RELEASEID) {
-      mappedRelease.ReleaseId = release.ReleaseId || release.releaseid || release.RELEASEID;
-    }
-    if (release.ReleaseReference || release.releasereference || release.RELEASEREFERENCE) {
-      mappedRelease.ReleaseReference = release.ReleaseReference || release.releasereference || release.RELEASEREFERENCE;
-    }
-    if (release.ReleaseType || release.releasetype || release.RELEASETYPE) {
-      mappedRelease.ReleaseType = release.ReleaseType || release.releasetype || release.RELEASETYPE;
-    }
-    if (release.ReleaseDetailsByTerritory || release.releasedetailsbyterritory || release.RELEASEDETAILSBYTERRITORY) {
-      mappedRelease.ReleaseDetailsByTerritory = release.ReleaseDetailsByTerritory || release.releasedetailsbyterritory || release.RELEASEDETAILSBYTERRITORY;
-    }
-    if (release.ReferenceTitle || release.referencetitle || release.REFERENCETITLE) {
-      mappedRelease.ReferenceTitle = release.ReferenceTitle || release.referencetitle || release.REFERENCETITLE;
-    }
-    if (release.DisplayTitleText || release.displaytitletext || release.DISPLAYTITLETEXT) {
-      mappedRelease.DisplayTitleText = release.DisplayTitleText || release.displaytitletext || release.DISPLAYTITLETEXT;
-    }
-    if (release.DisplayArtist || release.displayartist || release.DISPLAYARTIST) {
-      mappedRelease.DisplayArtist = release.DisplayArtist || release.displayartist || release.DISPLAYARTIST;
-    }
-    if (release.ReleaseResourceReferenceList || release.releaseresourcereferencelist || release.RELEASERESOURCEREFERENCELIST) {
-      mappedRelease.ReleaseResourceReferenceList = release.ReleaseResourceReferenceList || release.releaseresourcereferencelist || release.RELEASERESOURCEREFERENCELIST;
-    }
-    
-    // Add ResourceList from parent if available
-    mappedRelease.ResourceList = ernData.ResourceList || ernData.resourcelist || ernData.RESOURCELIST;
-    
-    if (release.GlobalReleaseDate || release.globalreleasedate || release.GLOBALRELEASEDATE || release.ReleaseDate || release.releasedate) {
-      mappedRelease.GlobalReleaseDate = release.GlobalReleaseDate || release.globalreleasedate || release.GLOBALRELEASEDATE || release.ReleaseDate || release.releasedate;
-    }
-    if (release.GlobalOriginalReleaseDate || release.globaloriginalreleasedate || release.GLOBALORIGINALRELEASEDATE || release.OriginalReleaseDate) {
-      mappedRelease.GlobalOriginalReleaseDate = release.GlobalOriginalReleaseDate || release.globaloriginalreleasedate || release.GLOBALORIGINALRELEASEDATE || release.OriginalReleaseDate;
-    }
-    
-    return mappedRelease;
-  });
 }
 
 module.exports = { parseERN };

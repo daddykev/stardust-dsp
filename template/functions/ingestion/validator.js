@@ -118,7 +118,7 @@ async function mockValidation(ernData, ernVersion, deliveryId) {
   
   // Enhanced validation checks based on ERN version
   if (ernVersion.startsWith("ERN-4")) {
-    // ERN 4.x validation
+    // ERN 4.x validation - check debug info which has the correct data
     if (!debugInfo?.hasMessageHeader) {
       errors.push("Missing MessageHeader in ERN message");
     }
@@ -127,14 +127,14 @@ async function mockValidation(ernData, ernVersion, deliveryId) {
       errors.push("Missing ReleaseList in ERN message");
     }
     
-    // Check for required ERN 4.x elements
+    // Check for recommended elements
     if (!ernData.MessageProfile && !ernData.MessageControlType) {
       warnings.push("MessageProfile or MessageControlType recommended for ERN 4.x");
     }
     
   } else {
     // ERN 3.x validation (legacy)
-    if (!ernData.MessageHeader?.MessageId && !debugInfo?.hasMessageHeader) {
+    if (!debugInfo?.hasMessageHeader) {
       errors.push("Missing MessageId in MessageHeader");
     }
     
@@ -154,6 +154,9 @@ async function mockValidation(ernData, ernVersion, deliveryId) {
   if (debugInfo) {
     info.push(`Releases found: ${debugInfo.releaseCount || 0}`);
     info.push(`Root element: ${debugInfo.rootElement || 'Unknown'}`);
+    if (debugInfo.hasResourceList) {
+      info.push("ResourceList: Present");
+    }
   }
   
   return {
