@@ -245,7 +245,7 @@ async function processDeliveryPipeline(deliveryId) {
     
     console.log(`Processing completed for delivery: ${deliveryId}`);
     
-    // Send success notification
+    // Send success notification - FIXED: use 'delivery' variable from earlier
     await sendNotification('processing_complete', {
       deliveryId: deliveryId,
       distributorId: delivery.sender,
@@ -270,13 +270,16 @@ async function processDeliveryPipeline(deliveryId) {
     // Generate error acknowledgment
     await generateErrorAcknowledgment(deliveryId, error);
     
-    // Send error notification
-    const deliveryData = (await deliveryRef.get()).data();
+    // Send error notification - FIXED: Get fresh delivery data
+    const deliverySnapshot = await deliveryRef.get();
+    const currentDelivery = deliverySnapshot.data();
+    
     await sendNotification('processing_failed', {
       deliveryId: deliveryId,
-      distributorId: deliveryData.sender,
+      distributorId: currentDelivery.sender,
       message: `Delivery ${deliveryId} processing failed: ${error.message}`,
-      error: error.message
+      error: error.message,
+      type: 'processing_failed'
     });
     
     throw error;

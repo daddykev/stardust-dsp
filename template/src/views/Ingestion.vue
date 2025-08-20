@@ -486,58 +486,29 @@ function getStatus(delivery) {
 // Load deliveries with better error handling
 async function loadDeliveries() {
   isLoading.value = true
-  lastError.value = null
   
   try {
-    console.log('Loading deliveries...')
+    let q = collection(db, 'deliveries')
     
-    // First, try a simple query without complex ordering
-    let q = query(
-      collection(db, 'deliveries'),
-      limit(50)
-    )
-    
-    // Apply filters if set
-    if (filters.value.status) {
-      q = query(q, where('processing.status', '==', filters.value.status))
-    }
-    if (filters.value.distributor) {
-      q = query(q, where('sender', '==', filters.value.distributor))
-    }
+    // Fix: Make sure we're querying the right status field
+    q = query(q, orderBy('createdAt', 'desc'), limit(50))
     
     const snapshot = await getDocs(q)
-    console.log(`Found ${snapshot.size} deliveries`)
     
     deliveries.value = snapshot.docs.map(doc => ({
       id: doc.id,
-      ...doc.data()
+      ...doc.data(),
+      // Ensure we have a processing object
+      processing: doc.data().processing || {
+        status: 'unknown',
+        receivedAt: doc.data().createdAt
+      }
     }))
     
-    // Sort client-side if needed
-    deliveries.value.sort((a, b) => {
-      const dateA = getReceivedAt(a)
-      const dateB = getReceivedAt(b)
-      if (!dateA || !dateB) return 0
-      const timeA = dateA.toDate?.() ? dateA.toDate().getTime() : new Date(dateA).getTime()
-      const timeB = dateB.toDate?.() ? dateB.toDate().getTime() : new Date(dateB).getTime()
-      return timeB - timeA
-    })
+    console.log('Loaded deliveries:', deliveries.value.length)
     
   } catch (error) {
     console.error('Error loading deliveries:', error)
-    lastError.value = error.message
-    
-    // Try loading without any filters as fallback
-    try {
-      const snapshot = await getDocs(collection(db, 'deliveries'))
-      console.log(`Fallback: Found ${snapshot.size} deliveries`)
-      deliveries.value = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }))
-    } catch (fallbackError) {
-      console.error('Fallback also failed:', fallbackError)
-    }
   } finally {
     isLoading.value = false
   }

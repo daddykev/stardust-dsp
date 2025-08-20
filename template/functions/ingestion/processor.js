@@ -1,9 +1,15 @@
 // functions/ingestion/processor.js
-const { logger } = require("firebase-functions");
 const admin = require("firebase-admin");
 const { Storage } = require("@google-cloud/storage");
 const path = require("path");
 const { v4: uuidv4 } = require("uuid");
+
+// Add logger if not imported
+const logger = {
+  log: (...args) => console.log(...args),
+  warn: (...args) => console.warn(...args),
+  error: (...args) => console.error(...args)
+};
 
 const db = admin.firestore();
 const storage = admin.storage();
@@ -23,88 +29,141 @@ async function processReleases(deliveryId, releases, deliveryData) {
   
   try {
     for (const release of releases) {
-      const releaseId = release.ReleaseId?.GRid || 
-                       release.RELEASEID?.GRID || 
-                       release.ReleaseId?.GRID || 
-                       generateReleaseId();
-      
-      logger.log(`Processing release: ${releaseId}`);
-      
-      // Process main release metadata
-      const releaseDoc = {
-        id: releaseId,
-        messageId: release.ReleaseReference || release.RELEASEREFERENCE,
-        sender: deliveryData.sender,
+      try {
+        // Generate or extract release ID with better error handling
+        const releaseId = release.ReleaseId?.GRid || 
+                         release.RELEASEID?.GRID || 
+                         release.ReleaseId?.GRID || 
+                         release.RELEASEID?.GRid ||
+                         generateReleaseId();
         
-        metadata: {
-          title: extractTitle(release),
-          displayArtist: extractArtist(release),
-          label: extractLabel(release),
-          releaseDate: parseReleaseDate(release),
-          genre: extractGenres(release),
-          copyright: extractCopyright(release),
-          releaseType: release.ReleaseType || release.RELEASETYPE || "Album",
-          totalTracks: (release.ReleaseResourceReferenceList || release.RELEASERESOURCEREFERENCELIST)?.length || 0,
-          catalogNumber: release.CatalogNumber || release.CATALOGNUMBER || null,
-          upc: release.ReleaseId?.ICPN || release.RELEASEID?.ICPN || null
-        },
+        logger.log(`Processing release: ${releaseId}`);
         
-        availability: {
-          territories: extractTerritories(release),
-          startDate: parseDate(release.GlobalReleaseDate || release.GLOBALRELEASEDATE),
-          endDate: parseDate(release.GlobalEndDate || release.GLOBALENDDATE),
-          tier: "all"
-        },
+        // Ensure we have required data
+        const title = extractTitle(release);
+        const artist = extractArtist(release);
         
-        ingestion: {
-          deliveryId,
-          receivedAt: deliveryData.processing?.receivedAt || admin.firestore.FieldValue.serverTimestamp(),
-          processedAt: admin.firestore.FieldValue.serverTimestamp(),
-          ernVersion: deliveryData.ern?.version || "ERN-3.8.2"
-        },
+        if (!title || title === "Unknown Title") {
+          logger.warn(`Release ${releaseId} has no title, skipping`);
+          continue;
+        }
         
-        stats: {
-          playCount: 0,
-          savedCount: 0
-        },
+        // Process main release metadata
+        const releaseDoc = {
+          id: releaseId,
+          messageId: release.ReleaseReference || release.RELEASEREFERENCE,
+          sender: deliveryData.sender,
+          
+          metadata: {
+            title: title,
+            displayArtist: artist,
+            label: extractLabel(release),
+            releaseDate: parseReleaseDate(release),
+            genre: extractGenres(release),
+            copyright: extractCopyright(release),
+            releaseType: release.ReleaseType || release.RELEASETYPE || "Album",
+            totalTracks: 0, // Will update after processing tracks
+            catalogNumber: release.CatalogNumber || release.CATALOGNUMBER || null,
+            upc: null // Will extract below
+          },
+          
+          availability: {
+            territories: extractTerritories(release),
+            startDate: parseDate(release.GlobalReleaseDate || release.GLOBALRELEASEDATE),
+            endDate: parseDate(release.GlobalEndDate || release.GLOBALENDDATE),
+            tier: "all"
+          },
+          
+          ingestion: {
+            deliveryId,
+            receivedAt: deliveryData.processing?.receivedAt || admin.firestore.FieldValue.serverTimestamp(),
+            processedAt: admin.firestore.FieldValue.serverTimestamp(),
+            ernVersion: deliveryData.ern?.version || "ERN-4.3"
+          },
+          
+          stats: {
+            playCount: 0,
+            savedCount: 0
+          },
+          
+          status: "processing"
+        };
         
-        status: "processing"
-      };
-      
-      // Store release
-      await db.collection("releases").doc(releaseId).set(releaseDoc);
-      
-      // Process tracks
-      const tracks = await processTracks(release, releaseId, deliveryData);
-      
-      // Process artwork
-      const artwork = await processArtwork(release, releaseId, deliveryData);
-      
-      // Create or update artist profiles
-      await processArtists(release, releaseId);
-      
-      // Create album document
-      await createAlbum(releaseDoc, tracks, artwork);
-      
-      // Update release with processed assets
-      await db.collection("releases").doc(releaseId).update({
-        assets: {
-          coverArt: artwork.coverArt,
-          additionalArt: artwork.additional || []
-        },
-        trackIds: tracks.map(t => t.id),
-        status: "active",
-        "ingestion.completedAt": admin.firestore.FieldValue.serverTimestamp()
-      });
-      
-      processedReleases.push({
-        releaseId,
-        title: releaseDoc.metadata.title,
-        artist: releaseDoc.metadata.displayArtist,
-        trackCount: tracks.length
-      });
-      
-      logger.log(`Release processed successfully: ${releaseId}`);
+        // Extract UPC from ICPN
+        if (release.RELEASEID?.ICPN) {
+          let icpn = release.RELEASEID.ICPN;
+          if (typeof icpn === 'object' && icpn._) {
+            releaseDoc.metadata.upc = icpn._;
+          } else if (typeof icpn === 'string') {
+            releaseDoc.metadata.upc = icpn;
+          }
+        }
+        
+        // Store release
+        await db.collection("releases").doc(releaseId).set(releaseDoc);
+        logger.log(`Release document created: ${releaseId}`);
+        
+        // Process tracks with error handling
+        let tracks = [];
+        try {
+          tracks = await processTracks(release, releaseId, deliveryData);
+          releaseDoc.metadata.totalTracks = tracks.length;
+        } catch (trackError) {
+          logger.error(`Failed to process tracks for release ${releaseId}:`, trackError);
+          tracks = [];
+        }
+        
+        // Process artwork with error handling
+        let artwork = { coverArt: null, additional: [] };
+        try {
+          artwork = await processArtwork(release, releaseId, deliveryData);
+        } catch (artworkError) {
+          logger.error(`Failed to process artwork for release ${releaseId}:`, artworkError);
+        }
+        
+        // Create or update artist profiles with error handling
+        try {
+          await processArtists(release, releaseId);
+        } catch (artistError) {
+          logger.error(`Failed to process artists for release ${releaseId}:`, artistError);
+        }
+        
+        // Create album document with error handling
+        try {
+          await createAlbum(releaseDoc, tracks, artwork);
+        } catch (albumError) {
+          logger.error(`Failed to create album for release ${releaseId}:`, albumError);
+        }
+        
+        // Update release with processed assets
+        await db.collection("releases").doc(releaseId).update({
+          assets: {
+            coverArt: artwork.coverArt,
+            additionalArt: artwork.additional || []
+          },
+          trackIds: tracks.map(t => t.id),
+          status: "active",
+          "metadata.totalTracks": tracks.length,
+          "ingestion.completedAt": admin.firestore.FieldValue.serverTimestamp()
+        });
+        
+        processedReleases.push({
+          releaseId,
+          title: releaseDoc.metadata.title,
+          artist: releaseDoc.metadata.displayArtist,
+          trackCount: tracks.length
+        });
+        
+        logger.log(`Release processed successfully: ${releaseId} - ${title} by ${artist}`);
+        
+      } catch (releaseError) {
+        logger.error(`Failed to process individual release:`, releaseError);
+        // Continue with next release
+      }
+    }
+    
+    if (processedReleases.length === 0) {
+      throw new Error("No releases could be processed successfully");
     }
     
     return processedReleases;
