@@ -88,8 +88,8 @@
           >
             <div class="release-artwork">
               <img 
-                :src="release.artworkUrl || '/placeholder-album.png'" 
-                :alt="release.title"
+                :src="getArtworkUrl(release)" 
+                :alt="getReleaseTitle(release)"
                 @error="handleImageError"
               />
               <div class="release-overlay">
@@ -99,15 +99,15 @@
               </div>
             </div>
             <div class="release-info">
-              <h3 class="release-title">{{ release.title }}</h3>
-              <p class="release-artist">{{ release.artistName }}</p>
+              <h3 class="release-title">{{ getReleaseTitle(release) }}</h3>
+              <p class="release-artist">{{ getReleaseArtist(release) }}</p>
               <div class="release-meta">
                 <span class="release-type">{{ getReleaseType(release) }}</span>
-                <span class="release-date">{{ formatDate(release.releaseDate) }}</span>
+                <span class="release-date">{{ formatDate(getReleaseDate(release)) }}</span>
               </div>
               <div class="release-stats">
-                <span><font-awesome-icon icon="music" /> {{ release.trackCount || 0 }} tracks</span>
-                <span v-if="release.duration">{{ formatDuration(release.duration) }}</span>
+                <span><font-awesome-icon icon="music" /> {{ getReleaseTrackCount(release) }} tracks</span>
+                <span v-if="release.metadata?.duration">{{ formatDuration(release.metadata.duration) }}</span>
               </div>
             </div>
           </div>
@@ -144,11 +144,11 @@
                 </td>
                 <td class="col-title">
                   <div class="track-title-cell">
-                    <span class="track-name">{{ track.title }}</span>
-                    <span v-if="track.version" class="track-version">{{ track.version }}</span>
+                    <span class="track-name">{{ getTrackTitle(track) }}</span>
+                    <span v-if="track.metadata?.version" class="track-version">{{ track.metadata.version }}</span>
                   </div>
                 </td>
-                <td class="col-artist">{{ track.artistName }}</td>
+                <td class="col-artist">{{ getTrackArtist(track) }}</td>
                 <td class="col-album">
                   <router-link 
                     v-if="track.releaseId" 
@@ -156,11 +156,11 @@
                     class="album-link"
                     @click.stop
                   >
-                    {{ track.albumTitle || 'Unknown Album' }}
+                    {{ track.albumTitle || getAlbumTitle(track) }}
                   </router-link>
                   <span v-else>{{ track.albumTitle || '-' }}</span>
                 </td>
-                <td class="col-duration">{{ formatDuration(track.duration) }}</td>
+                <td class="col-duration">{{ formatDuration(getTrackDuration(track)) }}</td>
                 <td class="col-isrc">
                   <code>{{ track.isrc }}</code>
                 </td>
@@ -187,7 +187,7 @@
           >
             <div class="artist-image">
               <img 
-                :src="artist.imageUrl || '/placeholder-artist.png'" 
+                :src="artist.profile?.image || '/placeholder-artist.png'" 
                 :alt="artist.name"
                 @error="handleImageError"
               />
@@ -195,8 +195,8 @@
             <div class="artist-info">
               <h3 class="artist-name">{{ artist.name }}</h3>
               <div class="artist-stats">
-                <span>{{ artist.releaseCount || 0 }} releases</span>
-                <span>{{ artist.trackCount || 0 }} tracks</span>
+                <span>{{ artist.stats?.releaseCount || artist.releaseCount || 0 }} releases</span>
+                <span>{{ artist.stats?.trackCount || artist.trackCount || 0 }} tracks</span>
               </div>
             </div>
           </div>
@@ -231,13 +231,13 @@
         <div class="mini-player-content container">
           <div class="track-info">
             <img 
-              :src="player.currentTrack.value.artworkUrl || '/placeholder-album.png'" 
-              :alt="player.currentTrack.value.title"
+              :src="getTrackArtwork(player.currentTrack.value)" 
+              :alt="getTrackTitle(player.currentTrack.value)"
               class="track-artwork"
             />
             <div class="track-details">
-              <h4>{{ player.currentTrack.value.title }}</h4>
-              <p>{{ player.currentTrack.value.artistName }}</p>
+              <h4>{{ getTrackTitle(player.currentTrack.value) }}</h4>
+              <p>{{ getTrackArtist(player.currentTrack.value) }}</p>
             </div>
           </div>
           
@@ -295,6 +295,55 @@ const tabs = computed(() => [
   { id: 'artists', label: 'Artists', count: stats.value.artists }
 ])
 
+// Data accessor helper functions - handle nested structure from ingestion
+function getReleaseTitle(release) {
+  return release?.metadata?.title || release?.title || 'Unknown Title'
+}
+
+function getReleaseArtist(release) {
+  return release?.metadata?.displayArtist || release?.artistName || 'Unknown Artist'
+}
+
+function getReleaseType(release) {
+  return release?.metadata?.releaseType || release?.releaseType || 'Album'
+}
+
+function getReleaseDate(release) {
+  return release?.metadata?.releaseDate || release?.releaseDate
+}
+
+function getReleaseTrackCount(release) {
+  return release?.metadata?.totalTracks || release?.trackCount || release?.trackIds?.length || 0
+}
+
+function getArtworkUrl(release) {
+  return release?.assets?.coverArt?.url || 
+         release?.assets?.coverArt || 
+         release?.artworkUrl || 
+         '/placeholder-album.png'
+}
+
+function getTrackTitle(track) {
+  return track?.metadata?.title || track?.title || 'Unknown Track'
+}
+
+function getTrackArtist(track) {
+  return track?.metadata?.displayArtist || track?.artistName || 'Unknown Artist'
+}
+
+function getTrackDuration(track) {
+  return track?.metadata?.duration || track?.duration || 0
+}
+
+function getTrackArtwork(track) {
+  return track?.artworkUrl || track?.audio?.artwork || '/placeholder-album.png'
+}
+
+function getAlbumTitle(track) {
+  // This would need to be looked up from the release
+  return track?.albumTitle || 'Unknown Album'
+}
+
 // Computed
 const hasContent = computed(() => {
   return stats.value.releases > 0 || stats.value.tracks > 0 || stats.value.artists > 0
@@ -304,11 +353,12 @@ const filteredReleases = computed(() => {
   let releases = catalog.releases.value
   if (searchQuery.value) {
     const query = searchQuery.value.toLowerCase()
-    releases = releases.filter(r => 
-      r.title?.toLowerCase().includes(query) ||
-      r.artistName?.toLowerCase().includes(query) ||
-      r.labelName?.toLowerCase().includes(query)
-    )
+    releases = releases.filter(r => {
+      const title = getReleaseTitle(r).toLowerCase()
+      const artist = getReleaseArtist(r).toLowerCase()
+      const label = (r?.metadata?.label || '').toLowerCase()
+      return title.includes(query) || artist.includes(query) || label.includes(query)
+    })
   }
   return paginateItems(releases)
 })
@@ -317,11 +367,12 @@ const filteredTracks = computed(() => {
   let tracks = catalog.tracks.value
   if (searchQuery.value) {
     const query = searchQuery.value.toLowerCase()
-    tracks = tracks.filter(t => 
-      t.title?.toLowerCase().includes(query) ||
-      t.artistName?.toLowerCase().includes(query) ||
-      t.isrc?.toLowerCase().includes(query)
-    )
+    tracks = tracks.filter(t => {
+      const title = getTrackTitle(t).toLowerCase()
+      const artist = getTrackArtist(t).toLowerCase()
+      const isrc = (t?.isrc || '').toLowerCase()
+      return title.includes(query) || artist.includes(query) || isrc.includes(query)
+    })
   }
   return paginateItems(tracks)
 })
@@ -406,8 +457,12 @@ async function playRelease(release) {
     player.clearQueue()
     tracks.forEach(track => {
       // Ensure track has necessary metadata
-      track.albumTitle = release.title
-      track.artworkUrl = release.artworkUrl
+      track.albumTitle = getReleaseTitle(release)
+      track.artworkUrl = getArtworkUrl(release)
+      // Set audio URL from nested structure
+      if (track.audio?.original) {
+        track.audioUrl = track.audio.original
+      }
       player.addToQueue(track)
     })
     // Play first track
@@ -416,13 +471,21 @@ async function playRelease(release) {
 }
 
 function playTrack(track) {
+  // Ensure track has audio URL from nested structure
+  if (track.audio?.original) {
+    track.audioUrl = track.audio.original
+  }
   player.playTrack(track)
 }
 
 function addToQueue(track) {
+  // Ensure track has audio URL from nested structure
+  if (track.audio?.original) {
+    track.audioUrl = track.audio.original
+  }
   player.addToQueue(track)
   // TODO: Show toast notification
-  console.log('Added to queue:', track.title)
+  console.log('Added to queue:', getTrackTitle(track))
 }
 
 function isCurrentTrack(track) {
@@ -432,10 +495,6 @@ function isCurrentTrack(track) {
 function showTrackMenu(track) {
   // TODO: Implement context menu
   console.log('Show menu for:', track)
-}
-
-function getReleaseType(release) {
-  return release.releaseType || 'Album'
 }
 
 function formatDate(date) {

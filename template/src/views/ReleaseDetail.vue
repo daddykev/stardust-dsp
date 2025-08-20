@@ -110,6 +110,10 @@
                   <span class="detail-label">ERN Version:</span>
                   <span>{{ release.ern.version }}</span>
                 </div>
+                <div class="detail-row" v-if="release.upc">
+                  <span class="detail-label">UPC:</span>
+                  <code>{{ release.upc }}</code>
+                </div>
               </div>
             </div>
           </div>
@@ -168,7 +172,7 @@
           <div class="credits-content">
             <div v-if="release.copyright" class="copyright-info">
               <p v-for="(copyright, idx) in release.copyright" :key="idx">
-                {{ copyright.text }} {{ copyright.year }}
+                {{ copyright.type }} {{ copyright.text }} {{ copyright.year }}
               </p>
             </div>
             <div v-if="release.credits" class="credits-list">
@@ -256,7 +260,28 @@ async function loadRelease() {
       return
     }
     
-    release.value = { id: releaseDoc.id, ...releaseDoc.data() }
+    const releaseData = releaseDoc.data()
+    
+    // Create a unified release object with both nested and flat properties
+    release.value = {
+      id: releaseDoc.id,
+      ...releaseData,
+      // Flatten key properties for easier template access
+      title: releaseData.metadata?.title || 'Unknown Title',
+      artistName: releaseData.metadata?.displayArtist || 'Unknown Artist',
+      releaseDate: releaseData.metadata?.releaseDate,
+      releaseType: releaseData.metadata?.releaseType || 'Album',
+      labelName: releaseData.metadata?.label,
+      artworkUrl: releaseData.assets?.coverArt?.url || releaseData.assets?.coverArt || '/placeholder-album.png',
+      copyright: releaseData.metadata?.copyright,
+      upc: releaseData.metadata?.upc,
+      // Preserve original structure
+      sender: releaseData.sender,
+      senderName: releaseData.senderName,
+      messageId: releaseData.messageId,
+      ingestedAt: releaseData.ingestion?.completedAt || releaseData.ingestion?.receivedAt,
+      ern: releaseData.ingestion?.ernVersion ? { version: releaseData.ingestion.ernVersion } : releaseData.ern
+    }
     
     // Get tracks for this release
     await loadTracks()
@@ -277,46 +302,40 @@ async function loadTracks() {
   try {
     const q = query(
       collection(db, 'tracks'),
-      where('releaseId', '==', releaseId.value),
-      orderBy('trackNumber', 'asc')
+      where('releaseId', '==', releaseId.value)
     )
     
     const snapshot = await getDocs(q)
-    tracks.value = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      // Add release info to tracks for player
-      albumTitle: release.value.title,
-      artworkUrl: release.value.artworkUrl
-    }))
-    
-    // If no trackNumber field, use index
-    tracks.value.forEach((track, index) => {
-      if (!track.trackNumber) {
-        track.trackNumber = index + 1
+    tracks.value = snapshot.docs.map(doc => {
+      const trackData = doc.data()
+      return {
+        id: doc.id,
+        ...trackData,
+        // Flatten for template access
+        title: trackData.metadata?.title || 'Unknown Track',
+        artistName: trackData.metadata?.displayArtist || release.value.artistName,
+        duration: trackData.metadata?.duration || 0,
+        trackNumber: trackData.metadata?.trackNumber || 1,
+        discNumber: trackData.metadata?.discNumber || 1,
+        isrc: trackData.isrc,
+        // Add release info for player
+        albumTitle: release.value.title,
+        artworkUrl: release.value.artworkUrl,
+        // Set audio URL for player
+        audioUrl: trackData.audio?.original || trackData.audio?.streams?.hls
       }
+    })
+    
+    // Sort by disc and track number
+    tracks.value.sort((a, b) => {
+      if (a.discNumber !== b.discNumber) {
+        return a.discNumber - b.discNumber
+      }
+      return a.trackNumber - b.trackNumber
     })
     
   } catch (err) {
     console.error('Error loading tracks:', err)
-    // Try without ordering if index doesn't exist
-    try {
-      const q = query(
-        collection(db, 'tracks'),
-        where('releaseId', '==', releaseId.value)
-      )
-      
-      const snapshot = await getDocs(q)
-      tracks.value = snapshot.docs.map((doc, index) => ({
-        id: doc.id,
-        ...doc.data(),
-        trackNumber: index + 1,
-        albumTitle: release.value.title,
-        artworkUrl: release.value.artworkUrl
-      }))
-    } catch (fallbackErr) {
-      console.error('Fallback also failed:', fallbackErr)
-    }
   }
 }
 
@@ -325,22 +344,57 @@ async function loadRelatedReleases() {
   if (!release.value?.artistName) return
   
   try {
+    // Query using the nested field structure
     const q = query(
       collection(db, 'releases'),
-      where('artistName', '==', release.value.artistName),
+      where('metadata.displayArtist', '==', release.value.artistName),
       where('status', '==', 'active'),
-      orderBy('releaseDate', 'desc'),
       limit(6)
     )
     
     const snapshot = await getDocs(q)
     relatedReleases.value = snapshot.docs
-      .map(doc => ({ id: doc.id, ...doc.data() }))
-      .filter(r => r.id !== releaseId.value) // Exclude current release
-      .slice(0, 5) // Take max 5
+      .map(doc => {
+        const data = doc.data()
+        return {
+          id: doc.id,
+          title: data.metadata?.title || 'Unknown Title',
+          releaseDate: data.metadata?.releaseDate,
+          artworkUrl: data.assets?.coverArt?.url || data.assets?.coverArt || '/placeholder-album.png'
+        }
+      })
+      .filter(r => r.id !== releaseId.value)
+      .slice(0, 5)
     
   } catch (err) {
     console.error('Error loading related releases:', err)
+    // Fallback without ordering if index doesn't exist
+    try {
+      const q = query(
+        collection(db, 'releases'),
+        where('status', '==', 'active'),
+        limit(10)
+      )
+      
+      const snapshot = await getDocs(q)
+      relatedReleases.value = snapshot.docs
+        .map(doc => {
+          const data = doc.data()
+          return {
+            id: doc.id,
+            title: data.metadata?.title || 'Unknown Title',
+            releaseDate: data.metadata?.releaseDate,
+            artworkUrl: data.assets?.coverArt?.url || '/placeholder-album.png'
+          }
+        })
+        .filter(r => {
+          const artistName = doc.data().metadata?.displayArtist
+          return r.id !== releaseId.value && artistName === release.value.artistName
+        })
+        .slice(0, 5)
+    } catch (fallbackErr) {
+      console.error('Fallback query also failed:', fallbackErr)
+    }
   }
 }
 
@@ -350,7 +404,13 @@ function playAll() {
   
   // Clear queue and add all tracks
   player.clearQueue()
-  tracks.value.forEach(track => player.addToQueue(track))
+  tracks.value.forEach(track => {
+    // Ensure audio URL is set
+    if (!track.audioUrl && track.audio?.original) {
+      track.audioUrl = track.audio.original
+    }
+    player.addToQueue(track)
+  })
   
   // Start playing first track
   player.playTrack(tracks.value[0])
@@ -364,7 +424,13 @@ function shufflePlay() {
   
   // Shuffle tracks
   const shuffled = [...tracks.value].sort(() => Math.random() - 0.5)
-  shuffled.forEach(track => player.addToQueue(track))
+  shuffled.forEach(track => {
+    // Ensure audio URL is set
+    if (!track.audioUrl && track.audio?.original) {
+      track.audioUrl = track.audio.original
+    }
+    player.addToQueue(track)
+  })
   
   // Start playing first track
   player.playTrack(shuffled[0])
@@ -374,9 +440,13 @@ function playTrack(track, index) {
   // Clear queue and add all tracks from this position
   player.clearQueue()
   
-  // Add remaining tracks to queue
+  // Add remaining tracks to queue with proper audio URLs
   for (let i = index; i < tracks.value.length; i++) {
-    player.addToQueue(tracks.value[i])
+    const t = tracks.value[i]
+    if (!t.audioUrl && t.audio?.original) {
+      t.audioUrl = t.audio.original
+    }
+    player.addToQueue(t)
   }
   
   // Play the selected track
@@ -384,6 +454,10 @@ function playTrack(track, index) {
 }
 
 function addTrackToQueue(track) {
+  // Ensure audio URL is set
+  if (!track.audioUrl && track.audio?.original) {
+    track.audioUrl = track.audio.original
+  }
   player.addToQueue(track)
   // TODO: Show toast notification
   console.log('Added to queue:', track.title)
