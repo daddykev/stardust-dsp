@@ -1,3 +1,448 @@
+<script setup>
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { 
+  collection, 
+  query, 
+  where, 
+  orderBy, 
+  limit, 
+  getDocs,
+  onSnapshot,
+  updateDoc,
+  doc,
+  addDoc,
+  serverTimestamp
+} from 'firebase/firestore'
+import { db } from '../firebase'
+
+const router = useRouter()
+
+// State
+const deliveries = ref([])
+const distributors = ref([])
+const isLoading = ref(false)
+const isRefreshing = ref(false)
+const viewMode = ref('timeline')
+const debugMode = ref(true) // Set to false in production
+const lastError = ref(null)
+const filters = ref({
+  status: '',
+  distributor: '',
+  startDate: '',
+  endDate: '',
+  search: ''
+})
+
+// Real-time subscription
+let unsubscribe = null
+
+// Computed
+const pipelineStatus = computed(() => {
+  const processing = deliveries.value.filter(d => isProcessing(d)).length
+  const transferring = deliveries.value.filter(d => 
+    d.processing?.status === 'waiting_for_files'
+  ).length
+  
+  if (processing > 5 || transferring > 3) return 'busy'
+  if (processing > 0 || transferring > 0) return 'active'
+  return 'idle'
+})
+
+const pipelineStatusText = computed(() => {
+  const status = pipelineStatus.value
+  return status === 'busy' ? 'Busy' : status === 'active' ? 'Active' : 'Idle'
+})
+
+const pipelineStatusDescription = computed(() => {
+  const status = pipelineStatus.value
+  if (status === 'busy') return 'High volume - deliveries may take longer to process'
+  if (status === 'active') return 'Processing deliveries normally'
+  return 'Ready to receive deliveries'
+})
+
+const fileTransferStatus = computed(() => {
+  return deliveries.value.filter(d => 
+    d.processing?.status === 'waiting_for_files'
+  ).length
+})
+
+const processingCount = computed(() => 
+  deliveries.value.filter(d => 
+    isProcessing(d) && d.processing?.status !== 'waiting_for_files'
+  ).length
+)
+
+const queuedCount = computed(() => 
+  deliveries.value.filter(d => {
+    const status = d.processing?.status || d.status
+    return status === 'pending' || status === 'received'
+  }).length
+)
+
+const todayCount = computed(() => {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return deliveries.value.filter(d => {
+    const receivedAt = getReceivedAt(d)
+    if (!receivedAt) return false
+    const deliveryDate = receivedAt.toDate?.() || new Date(receivedAt)
+    return deliveryDate >= today
+  }).length
+})
+
+// Helper functions for flexible data structure
+function getMessageId(delivery) {
+  return delivery.ern?.messageId || delivery.messageId || delivery.id
+}
+
+function getReleaseCount(delivery) {
+  return delivery.ern?.releaseCount || delivery.releaseCount || 0
+}
+
+function getReceivedAt(delivery) {
+  return delivery.processing?.receivedAt || delivery.receivedAt || delivery.createdAt
+}
+
+function getStatus(delivery) {
+  // Check for file transfer status first
+  if (delivery.processing?.status === 'waiting_for_files') {
+    return 'waiting_for_files'
+  }
+  return delivery.processing?.status || delivery.status || 'unknown'
+}
+
+// Sort deliveries by most recent first
+function sortDeliveries(deliveriesArray) {
+  return deliveriesArray.sort((a, b) => {
+    const aTime = getReceivedAt(a)
+    const bTime = getReceivedAt(b)
+    
+    // Convert to comparable timestamps
+    const aTimestamp = aTime?.toMillis ? aTime.toMillis() : 
+                       aTime?.getTime ? aTime.getTime() : 
+                       new Date(aTime).getTime()
+    
+    const bTimestamp = bTime?.toMillis ? bTime.toMillis() : 
+                       bTime?.getTime ? bTime.getTime() : 
+                       new Date(bTime).getTime()
+    
+    // Sort in descending order (most recent first)
+    return bTimestamp - aTimestamp
+  })
+}
+
+// Load deliveries with better error handling and consistent ordering
+async function loadDeliveries() {
+  isLoading.value = true
+  
+  try {
+    // Build query with consistent ordering
+    let q = collection(db, 'deliveries')
+    
+    // Apply filters if set
+    const constraints = []
+    
+    if (filters.value.status) {
+      constraints.push(where('processing.status', '==', filters.value.status))
+    }
+    
+    if (filters.value.distributor) {
+      constraints.push(where('sender', '==', filters.value.distributor))
+    }
+    
+    // Always order by the most reliable timestamp field
+    // Try to use processing.receivedAt first, fallback to createdAt
+    constraints.push(orderBy('createdAt', 'desc'))
+    constraints.push(limit(50))
+    
+    q = query(q, ...constraints)
+    
+    const snapshot = await getDocs(q)
+    
+    const loadedDeliveries = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      // Ensure we have a processing object
+      processing: doc.data().processing || {
+        status: 'unknown',
+        receivedAt: doc.data().createdAt
+      }
+    }))
+    
+    // Sort deliveries to ensure proper ordering
+    deliveries.value = sortDeliveries(loadedDeliveries)
+    
+    console.log('Loaded deliveries:', deliveries.value.length)
+    
+  } catch (error) {
+    console.error('Error loading deliveries:', error)
+    lastError.value = error.message
+  } finally {
+    isLoading.value = false
+  }
+}
+
+// Load distributors
+async function loadDistributors() {
+  try {
+    console.log('Loading distributors...')
+    const snapshot = await getDocs(collection(db, 'distributors'))
+    console.log(`Found ${snapshot.size} distributors`)
+    distributors.value = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }))
+  } catch (error) {
+    console.error('Error loading distributors:', error)
+  }
+}
+
+// Create a test delivery for debugging
+async function testCreateDelivery() {
+  try {
+    const testDelivery = {
+      sender: distributors.value[0]?.id || 'TEST_DISTRIBUTOR',
+      senderName: distributors.value[0]?.name || 'Test Distributor',
+      messageId: `TEST_${Date.now()}`,
+      releaseTitle: 'Test Release',
+      releaseArtist: 'Test Artist',
+      ernXml: '<ern>test</ern>',
+      audioFiles: [],
+      imageFiles: [],
+      processing: {
+        receivedAt: serverTimestamp(),
+        status: 'received'
+      },
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    }
+    
+    const docRef = await addDoc(collection(db, 'deliveries'), testDelivery)
+    console.log('Test delivery created:', docRef.id)
+    await loadDeliveries()
+  } catch (error) {
+    console.error('Error creating test delivery:', error)
+  }
+}
+
+// Refresh deliveries
+async function refreshDeliveries() {
+  isRefreshing.value = true
+  await loadDeliveries()
+  setTimeout(() => {
+    isRefreshing.value = false
+  }, 500)
+}
+
+// Apply filters
+function applyFilters() {
+  loadDeliveries()
+}
+
+// View delivery details
+function viewDeliveryDetails(delivery) {
+  router.push(`/ingestion/${delivery.id}`)
+}
+
+// Check if can reprocess
+function canReprocess(delivery) {
+  const status = getStatus(delivery)
+  return ['failed', 'validation_failed', 'processing_failed', 'error'].includes(status)
+}
+
+// Reprocess delivery
+async function reprocessDelivery(delivery) {
+  if (!confirm('Reprocess this delivery?')) return
+  
+  try {
+    await updateDoc(doc(db, 'deliveries', delivery.id), {
+      'processing.status': 'pending',
+      'processing.reprocessedAt': serverTimestamp()
+    })
+    
+    await loadDeliveries()
+  } catch (error) {
+    console.error('Error reprocessing:', error)
+  }
+}
+
+// Download acknowledgment
+async function downloadAcknowledgment(delivery) {
+  const url = `https://us-central1-stardust-dsp.cloudfunctions.net/getAcknowledgment?deliveryId=${delivery.id}`
+  window.open(url, '_blank')
+}
+
+// Utility functions
+function isProcessing(delivery) {
+  const status = getStatus(delivery)
+  return ['received', 'pending', 'files_ready', 'parsing', 'validating', 'processing_releases', 'waiting_for_files'].includes(status)
+}
+
+function getProgress(delivery) {
+  const status = getStatus(delivery)
+  const steps = {
+    'received': 5,
+    'pending': 10,
+    'waiting_for_files': 25,
+    'files_ready': 30,
+    'parsing': 40,
+    'validating': 60,
+    'processing_releases': 80,
+    'completed': 100,
+    'cancelled': 0,
+    'failed': 0
+  }
+  return steps[status] || 0
+}
+
+function getCurrentStep(delivery) {
+  const status = getStatus(delivery)
+  const steps = {
+    'received': 'Delivery received...',
+    'pending': 'Queued for processing...',
+    'waiting_for_files': 'Transferring files from distributor...',
+    'files_ready': 'Files ready, starting processing...',
+    'parsing': 'Parsing ERN XML...',
+    'validating': 'Validating with DDEX Workbench...',
+    'processing_releases': 'Processing releases and assets...',
+    'completed': 'Complete!',
+    'cancelled': 'Cancelled',
+    'failed': 'Failed'
+  }
+  return steps[status] || 'Unknown'
+}
+
+function getStatusClass(status) {
+  if (status === 'completed') return 'success'
+  if (status?.includes('failed') || status === 'error') return 'error'
+  if (['parsing', 'validating', 'processing_releases'].includes(status)) return 'processing'
+  if (status === 'waiting_for_files') return 'transferring'
+  if (status === 'files_ready') return 'ready'
+  if (status === 'pending' || status === 'received') return 'pending'
+  if (status === 'cancelled') return 'cancelled'
+  return 'default'
+}
+
+function getStatusIcon(status) {
+  if (status === 'completed') return 'check-circle'
+  if (status?.includes('failed') || status === 'error') return 'times-circle'
+  if (['parsing', 'validating', 'processing_releases'].includes(status)) return 'spinner'
+  if (status === 'waiting_for_files') return 'cloud-download-alt'
+  if (status === 'pending' || status === 'received') return 'clock'
+  return 'question-circle'
+}
+
+function formatStatus(status) {
+  if (!status) return 'Unknown'
+  if (status === 'waiting_for_files') return 'Transferring Files'
+  return status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+}
+
+function getDistributorName(distributorId) {
+  const dist = distributors.value.find(d => d.id === distributorId)
+  return dist?.name || distributorId || 'Unknown'
+}
+
+function formatDate(timestamp) {
+  if (!timestamp) return null
+  const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp)
+  return date.toLocaleDateString() + ' ' + date.toLocaleTimeString()
+}
+
+function formatRelativeTime(timestamp) {
+  if (!timestamp) return ''
+  const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp)
+  const now = new Date()
+  const diff = now - date
+  
+  const minutes = Math.floor(diff / 60000)
+  const hours = Math.floor(diff / 3600000)
+  const days = Math.floor(diff / 86400000)
+  
+  if (minutes < 1) return 'Just now'
+  if (minutes < 60) return `${minutes}m ago`
+  if (hours < 24) return `${hours}h ago`
+  return `${days}d ago`
+}
+
+// Setup real-time updates with proper ordering
+function setupRealtimeUpdates() {
+  try {
+    console.log('Setting up real-time updates...')
+    
+    // Use ordered query for real-time updates
+    unsubscribe = onSnapshot(
+      query(
+        collection(db, 'deliveries'),
+        orderBy('createdAt', 'desc'),
+        limit(20)
+      ),
+      (snapshot) => {
+        console.log(`Real-time update: ${snapshot.size} deliveries`)
+        
+        // Process document changes
+        snapshot.docChanges().forEach(change => {
+          const delivery = {
+            id: change.doc.id,
+            ...change.doc.data()
+          }
+          
+          if (change.type === 'added') {
+            // Check if delivery already exists (avoid duplicates)
+            const existingIndex = deliveries.value.findIndex(d => d.id === delivery.id)
+            if (existingIndex === -1) {
+              // Add new delivery
+              deliveries.value.push(delivery)
+            }
+          } else if (change.type === 'modified') {
+            // Update existing delivery
+            const index = deliveries.value.findIndex(d => d.id === delivery.id)
+            if (index >= 0) {
+              deliveries.value[index] = delivery
+            } else {
+              // If not found, add it
+              deliveries.value.push(delivery)
+            }
+          } else if (change.type === 'removed') {
+            // Remove deleted delivery
+            const index = deliveries.value.findIndex(d => d.id === delivery.id)
+            if (index >= 0) {
+              deliveries.value.splice(index, 1)
+            }
+          }
+        })
+        
+        // Sort deliveries after updates
+        deliveries.value = sortDeliveries(deliveries.value)
+        
+        // Keep only the most recent 50
+        if (deliveries.value.length > 50) {
+          deliveries.value = deliveries.value.slice(0, 50)
+        }
+      },
+      (error) => {
+        console.error('Real-time subscription error:', error)
+        lastError.value = error.message
+      }
+    )
+  } catch (error) {
+    console.error('Error setting up real-time updates:', error)
+  }
+}
+
+onMounted(() => {
+  console.log('Ingestion component mounted')
+  loadDeliveries()
+  loadDistributors()
+  setupRealtimeUpdates()
+})
+
+onUnmounted(() => {
+  if (unsubscribe) unsubscribe()
+})
+</script>
+
 <template>
   <div class="ingestion-page">
     <div class="container">
@@ -368,389 +813,6 @@
     </div>
   </div>
 </template>
-
-<script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
-import { 
-  collection, 
-  query, 
-  where, 
-  orderBy, 
-  limit, 
-  getDocs,
-  onSnapshot,
-  updateDoc,
-  doc,
-  addDoc,
-  serverTimestamp
-} from 'firebase/firestore'
-import { db } from '../firebase'
-
-const router = useRouter()
-
-// State
-const deliveries = ref([])
-const distributors = ref([])
-const isLoading = ref(false)
-const isRefreshing = ref(false)
-const viewMode = ref('timeline')
-const debugMode = ref(true) // Set to false in production
-const lastError = ref(null)
-const filters = ref({
-  status: '',
-  distributor: '',
-  startDate: '',
-  endDate: '',
-  search: ''
-})
-
-// Real-time subscription
-let unsubscribe = null
-
-// Computed
-const pipelineStatus = computed(() => {
-  const processing = deliveries.value.filter(d => isProcessing(d)).length
-  const transferring = deliveries.value.filter(d => 
-    d.processing?.status === 'waiting_for_files'
-  ).length
-  
-  if (processing > 5 || transferring > 3) return 'busy'
-  if (processing > 0 || transferring > 0) return 'active'
-  return 'idle'
-})
-
-const pipelineStatusText = computed(() => {
-  const status = pipelineStatus.value
-  return status === 'busy' ? 'Busy' : status === 'active' ? 'Active' : 'Idle'
-})
-
-const pipelineStatusDescription = computed(() => {
-  const status = pipelineStatus.value
-  if (status === 'busy') return 'High volume - deliveries may take longer to process'
-  if (status === 'active') return 'Processing deliveries normally'
-  return 'Ready to receive deliveries'
-})
-
-const fileTransferStatus = computed(() => {
-  return deliveries.value.filter(d => 
-    d.processing?.status === 'waiting_for_files'
-  ).length
-})
-
-const processingCount = computed(() => 
-  deliveries.value.filter(d => 
-    isProcessing(d) && d.processing?.status !== 'waiting_for_files'
-  ).length
-)
-
-const queuedCount = computed(() => 
-  deliveries.value.filter(d => {
-    const status = d.processing?.status || d.status
-    return status === 'pending' || status === 'received'
-  }).length
-)
-
-const todayCount = computed(() => {
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  return deliveries.value.filter(d => {
-    const receivedAt = getReceivedAt(d)
-    if (!receivedAt) return false
-    const deliveryDate = receivedAt.toDate?.() || new Date(receivedAt)
-    return deliveryDate >= today
-  }).length
-})
-
-// Helper functions for flexible data structure
-function getMessageId(delivery) {
-  return delivery.ern?.messageId || delivery.messageId || delivery.id
-}
-
-function getReleaseCount(delivery) {
-  return delivery.ern?.releaseCount || delivery.releaseCount || 0
-}
-
-function getReceivedAt(delivery) {
-  return delivery.processing?.receivedAt || delivery.receivedAt || delivery.createdAt
-}
-
-function getStatus(delivery) {
-  // Check for file transfer status first
-  if (delivery.processing?.status === 'waiting_for_files') {
-    return 'waiting_for_files'
-  }
-  return delivery.processing?.status || delivery.status || 'unknown'
-}
-
-// Load deliveries with better error handling
-async function loadDeliveries() {
-  isLoading.value = true
-  
-  try {
-    let q = collection(db, 'deliveries')
-    
-    // Fix: Make sure we're querying the right status field
-    q = query(q, orderBy('createdAt', 'desc'), limit(50))
-    
-    const snapshot = await getDocs(q)
-    
-    deliveries.value = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      // Ensure we have a processing object
-      processing: doc.data().processing || {
-        status: 'unknown',
-        receivedAt: doc.data().createdAt
-      }
-    }))
-    
-    console.log('Loaded deliveries:', deliveries.value.length)
-    
-  } catch (error) {
-    console.error('Error loading deliveries:', error)
-  } finally {
-    isLoading.value = false
-  }
-}
-
-// Load distributors
-async function loadDistributors() {
-  try {
-    console.log('Loading distributors...')
-    const snapshot = await getDocs(collection(db, 'distributors'))
-    console.log(`Found ${snapshot.size} distributors`)
-    distributors.value = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }))
-  } catch (error) {
-    console.error('Error loading distributors:', error)
-  }
-}
-
-// Create a test delivery for debugging
-async function testCreateDelivery() {
-  try {
-    const testDelivery = {
-      sender: distributors.value[0]?.id || 'TEST_DISTRIBUTOR',
-      senderName: distributors.value[0]?.name || 'Test Distributor',
-      messageId: `TEST_${Date.now()}`,
-      releaseTitle: 'Test Release',
-      releaseArtist: 'Test Artist',
-      ernXml: '<ern>test</ern>',
-      audioFiles: [],
-      imageFiles: [],
-      processing: {
-        receivedAt: serverTimestamp(),
-        status: 'received'
-      },
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    }
-    
-    const docRef = await addDoc(collection(db, 'deliveries'), testDelivery)
-    console.log('Test delivery created:', docRef.id)
-    await loadDeliveries()
-  } catch (error) {
-    console.error('Error creating test delivery:', error)
-  }
-}
-
-// Refresh deliveries
-async function refreshDeliveries() {
-  isRefreshing.value = true
-  await loadDeliveries()
-  setTimeout(() => {
-    isRefreshing.value = false
-  }, 500)
-}
-
-// Apply filters
-function applyFilters() {
-  loadDeliveries()
-}
-
-// View delivery details
-function viewDeliveryDetails(delivery) {
-  router.push(`/ingestion/${delivery.id}`)
-}
-
-// Check if can reprocess
-function canReprocess(delivery) {
-  const status = getStatus(delivery)
-  return ['failed', 'validation_failed', 'processing_failed', 'error'].includes(status)
-}
-
-// Reprocess delivery
-async function reprocessDelivery(delivery) {
-  if (!confirm('Reprocess this delivery?')) return
-  
-  try {
-    await updateDoc(doc(db, 'deliveries', delivery.id), {
-      'processing.status': 'pending',
-      'processing.reprocessedAt': serverTimestamp()
-    })
-    
-    await loadDeliveries()
-  } catch (error) {
-    console.error('Error reprocessing:', error)
-  }
-}
-
-// Download acknowledgment
-async function downloadAcknowledgment(delivery) {
-  const url = `https://us-central1-stardust-dsp.cloudfunctions.net/getAcknowledgment?deliveryId=${delivery.id}`
-  window.open(url, '_blank')
-}
-
-// Utility functions
-function isProcessing(delivery) {
-  const status = getStatus(delivery)
-  return ['received', 'pending', 'files_ready', 'parsing', 'validating', 'processing_releases', 'waiting_for_files'].includes(status)
-}
-
-function getProgress(delivery) {
-  const status = getStatus(delivery)
-  const steps = {
-    'received': 5,
-    'pending': 10,
-    'waiting_for_files': 25,
-    'files_ready': 30,
-    'parsing': 40,
-    'validating': 60,
-    'processing_releases': 80,
-    'completed': 100,
-    'cancelled': 0,
-    'failed': 0
-  }
-  return steps[status] || 0
-}
-
-function getCurrentStep(delivery) {
-  const status = getStatus(delivery)
-  const steps = {
-    'received': 'Delivery received...',
-    'pending': 'Queued for processing...',
-    'waiting_for_files': 'Transferring files from distributor...',
-    'files_ready': 'Files ready, starting processing...',
-    'parsing': 'Parsing ERN XML...',
-    'validating': 'Validating with DDEX Workbench...',
-    'processing_releases': 'Processing releases and assets...',
-    'completed': 'Complete!',
-    'cancelled': 'Cancelled',
-    'failed': 'Failed'
-  }
-  return steps[status] || 'Unknown'
-}
-
-function getStatusClass(status) {
-  if (status === 'completed') return 'success'
-  if (status?.includes('failed') || status === 'error') return 'error'
-  if (['parsing', 'validating', 'processing_releases'].includes(status)) return 'processing'
-  if (status === 'waiting_for_files') return 'transferring'
-  if (status === 'files_ready') return 'ready'
-  if (status === 'pending' || status === 'received') return 'pending'
-  if (status === 'cancelled') return 'cancelled'
-  return 'default'
-}
-
-function getStatusIcon(status) {
-  if (status === 'completed') return 'check-circle'
-  if (status?.includes('failed') || status === 'error') return 'times-circle'
-  if (['parsing', 'validating', 'processing_releases'].includes(status)) return 'spinner'
-  if (status === 'waiting_for_files') return 'cloud-download-alt'
-  if (status === 'pending' || status === 'received') return 'clock'
-  return 'question-circle'
-}
-
-function formatStatus(status) {
-  if (!status) return 'Unknown'
-  if (status === 'waiting_for_files') return 'Transferring Files'
-  return status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
-}
-
-function getDistributorName(distributorId) {
-  const dist = distributors.value.find(d => d.id === distributorId)
-  return dist?.name || distributorId || 'Unknown'
-}
-
-function formatDate(timestamp) {
-  if (!timestamp) return null
-  const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp)
-  return date.toLocaleDateString() + ' ' + date.toLocaleTimeString()
-}
-
-function formatRelativeTime(timestamp) {
-  if (!timestamp) return ''
-  const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp)
-  const now = new Date()
-  const diff = now - date
-  
-  const minutes = Math.floor(diff / 60000)
-  const hours = Math.floor(diff / 3600000)
-  const days = Math.floor(diff / 86400000)
-  
-  if (minutes < 1) return 'Just now'
-  if (minutes < 60) return `${minutes}m ago`
-  if (hours < 24) return `${hours}h ago`
-  return `${days}d ago`
-}
-
-// Setup real-time updates with better error handling
-function setupRealtimeUpdates() {
-  try {
-    console.log('Setting up real-time updates...')
-    
-    // Use a simpler query for real-time updates
-    unsubscribe = onSnapshot(
-      query(
-        collection(db, 'deliveries'),
-        limit(20)
-      ),
-      (snapshot) => {
-        console.log(`Real-time update: ${snapshot.size} deliveries`)
-        const updates = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }))
-        
-        // Update or add deliveries
-        updates.forEach(update => {
-          const index = deliveries.value.findIndex(d => d.id === update.id)
-          if (index >= 0) {
-            deliveries.value[index] = update
-          } else {
-            deliveries.value.unshift(update)
-          }
-        })
-        
-        // Keep only the most recent 50
-        if (deliveries.value.length > 50) {
-          deliveries.value = deliveries.value.slice(0, 50)
-        }
-      },
-      (error) => {
-        console.error('Real-time subscription error:', error)
-        lastError.value = error.message
-      }
-    )
-  } catch (error) {
-    console.error('Error setting up real-time updates:', error)
-  }
-}
-
-onMounted(() => {
-  console.log('Ingestion component mounted')
-  loadDeliveries()
-  loadDistributors()
-  setupRealtimeUpdates()
-})
-
-onUnmounted(() => {
-  if (unsubscribe) unsubscribe()
-})
-</script>
 
 <style scoped>
 /* Page Layout */
