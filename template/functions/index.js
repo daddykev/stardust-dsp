@@ -1586,3 +1586,91 @@ exports.debugParsedData = onRequest({
     response.status(500).json({ error: error.message });
   }
 });
+
+/**
+ * Deduplicate releases by UPC (one-time cleanup)
+ */
+exports.deduplicateReleases = onRequest({
+  cors: true
+}, async (request, response) => {
+  try {
+    const db = admin.firestore();
+    
+    // Get all releases
+    const releasesSnapshot = await db.collection('releases').get();
+    const releasesByUPC = {};
+    
+    // Group releases by UPC
+    releasesSnapshot.docs.forEach(doc => {
+      const data = doc.data();
+      const upc = data.metadata?.upc || data.upc;
+      
+      if (upc) {
+        if (!releasesByUPC[upc]) {
+          releasesByUPC[upc] = [];
+        }
+        releasesByUPC[upc].push({ id: doc.id, data: data });
+      }
+    });
+    
+    const duplicates = [];
+    const merged = [];
+    
+    // Process duplicates
+    for (const [upc, releases] of Object.entries(releasesByUPC)) {
+      if (releases.length > 1) {
+        duplicates.push({ upc, count: releases.length });
+        
+        // Sort by processing date, keep the latest
+        releases.sort((a, b) => {
+          const aDate = a.data.ingestion?.processedAt?.toMillis() || 0;
+          const bDate = b.data.ingestion?.processedAt?.toMillis() || 0;
+          return bDate - aDate;
+        });
+        
+        const primary = releases[0];
+        const newId = `UPC_${upc}`;
+        
+        // Merge delivery history
+        const deliveryHistory = new Set();
+        releases.forEach(r => {
+          if (r.data.ingestion?.deliveryHistory) {
+            r.data.ingestion.deliveryHistory.forEach(d => deliveryHistory.add(d));
+          } else if (r.data.ingestion?.deliveryId) {
+            deliveryHistory.add(r.data.ingestion.deliveryId);
+          }
+        });
+        
+        // Create merged document with new ID
+        await db.collection('releases').doc(newId).set({
+          ...primary.data,
+          id: newId,
+          upc: upc,
+          'ingestion.deliveryHistory': Array.from(deliveryHistory),
+          'ingestion.mergedFrom': releases.map(r => r.id),
+          'ingestion.mergedAt': admin.firestore.FieldValue.serverTimestamp()
+        });
+        
+        // Delete old documents
+        for (const release of releases) {
+          if (release.id !== newId) {
+            await db.collection('releases').doc(release.id).delete();
+          }
+        }
+        
+        merged.push({ upc, oldIds: releases.map(r => r.id), newId });
+      }
+    }
+    
+    response.json({
+      success: true,
+      duplicatesFound: duplicates.length,
+      duplicates: duplicates,
+      merged: merged
+    });
+    
+  } catch (error) {
+    console.error('Deduplication failed:', error);
+    response.status(500).json({ error: error.message });
+  }
+});

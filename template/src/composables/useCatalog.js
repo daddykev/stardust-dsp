@@ -178,21 +178,37 @@ export function useCatalog() {
       
       // Calculate stats for each artist
       for (const artist of artists.value) {
-        // Count releases
-        const releasesQuery = query(
-          collection(db, 'releases'),
-          where('artistName', '==', artist.name)
-        )
-        const releasesSnapshot = await getDocs(releasesQuery)
-        artist.releaseCount = releasesSnapshot.size
+        // Get unique releases for this artist
+        if (artist.releases && Array.isArray(artist.releases)) {
+          // Releases array already contains unique release IDs
+          artist.stats = {
+            ...artist.stats,
+            releaseCount: artist.releases.length
+          };
+        } else {
+          // Fallback: count releases by artist name
+          const releasesQuery = query(
+            collection(db, 'releases'),
+            where('metadata.displayArtist', '==', artist.name),
+            where('status', '==', 'active')
+          );
+          const releasesSnapshot = await getDocs(releasesQuery);
+          artist.stats = {
+            ...artist.stats,
+            releaseCount: releasesSnapshot.size
+          };
+        }
         
         // Count tracks
         const tracksQuery = query(
           collection(db, 'tracks'),
-          where('artistName', '==', artist.name)
-        )
-        const tracksSnapshot = await getDocs(tracksQuery)
-        artist.trackCount = tracksSnapshot.size
+          where('metadata.displayArtist', '==', artist.name)
+        );
+        const tracksSnapshot = await getDocs(tracksQuery);
+        artist.stats = {
+          ...artist.stats,
+          trackCount: tracksSnapshot.size
+        };
       }
       
       return artists.value

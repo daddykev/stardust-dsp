@@ -104,6 +104,44 @@ function detectERNVersionFromXML(xmlString) {
 }
 
 /**
+ * Detect message type from ERN data
+ */
+function detectMessageType(ernData, rootKey) {
+  // Check root element name
+  if (rootKey.toUpperCase().includes('NEWRELEASE')) {
+    return 'NewRelease';
+  }
+  
+  // Check for UpdateIndicator in releases
+  const releaseList = ernData.RELEASELIST || {};
+  const releases = releaseList.RELEASE || [];
+  const firstRelease = Array.isArray(releases) ? releases[0] : releases;
+  
+  if (firstRelease) {
+    // Check for takedown indicators
+    const dealList = ernData.DEALLIST || {};
+    const deals = dealList.RELEASEDEAL || dealList.Deal || [];
+    const firstDeal = Array.isArray(deals) ? deals[0] : deals;
+    
+    if (firstDeal?.DealTerms?.TakeDown === 'true' || 
+        firstDeal?.DEALTERMS?.TAKEDOWN === 'true') {
+      return 'Takedown';
+    }
+    
+    // Check for update indicator
+    if (firstRelease.UpdateIndicator === 'OriginalMessage' || 
+        firstRelease.UPDATEINDICATOR === 'OriginalMessage') {
+      return 'NewRelease';
+    } else if (firstRelease.UpdateIndicator || firstRelease.UPDATEINDICATOR) {
+      return 'Update';
+    }
+  }
+  
+  // Default to NewRelease
+  return 'NewRelease';
+}
+
+/**
  * Parse ERN XML and extract release information
  */
 async function parseERN(deliveryId, ernXml) {
@@ -170,6 +208,10 @@ async function parseERN(deliveryId, ernXml) {
     logger.log(`Root element: ${rootKey.toUpperCase()}`);
     logger.log(`Root data keys: ${Object.keys(uppercaseRootData).join(', ')}`);
     
+    // Detect message type
+    const messageType = detectMessageType(uppercaseRootData, rootKey);
+    logger.log(`Message type detected: ${messageType}`);
+    
     // Extract ERN profile
     const ernProfile = detectERNProfile(uppercaseRootData, detectedVersion);
     
@@ -191,6 +233,7 @@ async function parseERN(deliveryId, ernXml) {
     const ernMetadata = {
       version: detectedVersion,
       profile: ernProfile,
+      messageType: messageType,
       messageId: originalData.messageId || parsedMessageId || deliveryId,
       releaseCount: releases.length,
       parsedMessageId: parsedMessageId
@@ -239,6 +282,7 @@ async function parseERN(deliveryId, ernXml) {
         finalMessageId: ernMetadata.messageId,
         preservedOriginal: !!originalData.messageId,
         detectedVersion: detectedVersion,
+        messageType: messageType,
         rootElement: rootKey.toUpperCase(),
         releaseCount: releases.length,
         hasMessageHeader: !!uppercaseRootData.MESSAGEHEADER,
@@ -251,14 +295,15 @@ async function parseERN(deliveryId, ernXml) {
     await db.collection("deliveries").doc(deliveryId).update(updateData);
     
     logger.log(`ERN parsed successfully for delivery: ${deliveryId}`);
-    logger.log(`Version: ${detectedVersion}, Releases: ${releases.length}`);
+    logger.log(`Version: ${detectedVersion}, Message Type: ${messageType}, Releases: ${releases.length}`);
     logger.log(`ID preservation: Original=${originalData.messageId}, Parsed=${parsedMessageId}, Final=${ernMetadata.messageId}`);
     
     return { 
       success: true, 
       releases: releases,
       ernData: uppercaseRootData,
-      ernVersion: detectedVersion
+      ernVersion: detectedVersion,
+      messageType: messageType
     };
     
   } catch (error) {
@@ -344,6 +389,15 @@ function extractReleases(ernData, ernVersion) {
     mappedRelease.CLINE = release.CLine || release.CLINE;
     mappedRelease.RELEASEDATE = release.ReleaseDate || release.RELEASEDATE;
     mappedRelease.ORIGINALRELEASEDATE = release.OriginalReleaseDate || release.ORIGINALRELEASEDATE;
+    mappedRelease.UPDATEINDICATOR = release.UpdateIndicator || release.UPDATEINDICATOR;
+    
+    // Map ResourceList and DealList if present at release level
+    if (release.ResourceList || release.RESOURCELIST) {
+      mappedRelease.RESOURCELIST = release.ResourceList || release.RESOURCELIST;
+    }
+    if (release.DealList || release.DEALLIST) {
+      mappedRelease.DEALLIST = release.DealList || release.DEALLIST;
+    }
     
     return mappedRelease;
   });

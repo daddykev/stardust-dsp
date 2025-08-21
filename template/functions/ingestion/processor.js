@@ -19,25 +19,74 @@ const gcs = new Storage();
 const STORAGE_BUCKET = "stardust-dsp.firebasestorage.app";
 
 /**
- * Process releases and their assets
+ * Process releases with UPC-based deduplication and message type handling
  * Direct function - no longer Pub/Sub triggered
  */
 async function processReleases(deliveryId, releases, deliveryData) {
   logger.log(`Processing ${releases.length} releases from delivery: ${deliveryId}`);
   
   const processedReleases = [];
+  const messageType = deliveryData.ern?.messageType || 'NewRelease';
   
   try {
     for (const release of releases) {
       try {
-        // Generate or extract release ID with better error handling
-        const releaseId = release.ReleaseId?.GRid || 
-                         release.RELEASEID?.GRID || 
-                         release.ReleaseId?.GRID || 
-                         release.RELEASEID?.GRid ||
-                         generateReleaseId();
+        // Extract UPC as primary identifier
+        let upc = null;
+        if (release.RELEASEID?.ICPN) {
+          let icpn = release.RELEASEID.ICPN;
+          if (typeof icpn === 'object' && icpn._) {
+            upc = icpn._;
+          } else if (typeof icpn === 'string') {
+            upc = icpn;
+          }
+        }
         
-        logger.log(`Processing release: ${releaseId}`);
+        // If no UPC, fall back to GRid
+        const releaseIdentifier = upc || 
+                                 release.ReleaseId?.GRid || 
+                                 release.RELEASEID?.GRID || 
+                                 release.ReleaseId?.GRID || 
+                                 release.RELEASEID?.GRid;
+        
+        if (!releaseIdentifier) {
+          logger.warn(`No UPC or GRid found for release, skipping`);
+          continue;
+        }
+        
+        logger.log(`Processing release with identifier: ${releaseIdentifier} (UPC: ${upc})`);
+        logger.log(`Message type: ${messageType}`);
+        
+        // Use UPC as the document ID if available, otherwise use GRid
+        const releaseId = upc ? `UPC_${upc}` : releaseIdentifier;
+        
+        // Check if release already exists
+        const existingReleaseDoc = await db.collection("releases").doc(releaseId).get();
+        const releaseExists = existingReleaseDoc.exists;
+        
+        // Handle different message types
+        if (messageType === 'Takedown') {
+          if (releaseExists) {
+            // Mark release as taken down
+            await db.collection("releases").doc(releaseId).update({
+              status: "taken_down",
+              "ingestion.takedownAt": admin.firestore.FieldValue.serverTimestamp(),
+              "ingestion.takedownDeliveryId": deliveryId
+            });
+            
+            logger.log(`Release ${releaseId} marked as taken down`);
+            processedReleases.push({
+              releaseId,
+              title: existingReleaseDoc.data().metadata?.title || "Unknown",
+              artist: existingReleaseDoc.data().metadata?.displayArtist || "Unknown",
+              action: "takedown",
+              trackCount: 0
+            });
+          } else {
+            logger.warn(`Takedown requested for non-existent release: ${releaseId}`);
+          }
+          continue;
+        }
         
         // Ensure we have required data
         const title = extractTitle(release);
@@ -51,6 +100,7 @@ async function processReleases(deliveryId, releases, deliveryData) {
         // Process main release metadata
         const releaseDoc = {
           id: releaseId,
+          upc: upc, // Store UPC at root level for easy querying
           messageId: release.ReleaseReference || release.RELEASEREFERENCE,
           sender: deliveryData.sender,
           
@@ -64,7 +114,7 @@ async function processReleases(deliveryId, releases, deliveryData) {
             releaseType: release.ReleaseType || release.RELEASETYPE || "Album",
             totalTracks: 0, // Will update after processing tracks
             catalogNumber: release.CatalogNumber || release.CATALOGNUMBER || null,
-            upc: null // Will extract below
+            upc: upc
           },
           
           availability: {
@@ -78,7 +128,9 @@ async function processReleases(deliveryId, releases, deliveryData) {
             deliveryId,
             receivedAt: deliveryData.processing?.receivedAt || admin.firestore.FieldValue.serverTimestamp(),
             processedAt: admin.firestore.FieldValue.serverTimestamp(),
-            ernVersion: deliveryData.ern?.version || "ERN-4.3"
+            ernVersion: deliveryData.ern?.version || "ERN-4.3",
+            messageType: messageType,
+            deliveryHistory: admin.firestore.FieldValue.arrayUnion(deliveryId)
           },
           
           stats: {
@@ -88,20 +140,6 @@ async function processReleases(deliveryId, releases, deliveryData) {
           
           status: "processing"
         };
-        
-        // Extract UPC from ICPN
-        if (release.RELEASEID?.ICPN) {
-          let icpn = release.RELEASEID.ICPN;
-          if (typeof icpn === 'object' && icpn._) {
-            releaseDoc.metadata.upc = icpn._;
-          } else if (typeof icpn === 'string') {
-            releaseDoc.metadata.upc = icpn;
-          }
-        }
-        
-        // Store release
-        await db.collection("releases").doc(releaseId).set(releaseDoc);
-        logger.log(`Release document created: ${releaseId}`);
         
         // Process tracks with error handling
         let tracks = [];
@@ -121,38 +159,98 @@ async function processReleases(deliveryId, releases, deliveryData) {
           logger.error(`Failed to process artwork for release ${releaseId}:`, artworkError);
         }
         
-        // Create or update artist profiles with error handling
-        try {
-          await processArtists(release, releaseId);
-        } catch (artistError) {
-          logger.error(`Failed to process artists for release ${releaseId}:`, artistError);
+        // Handle update vs new release
+        if (releaseExists && messageType === 'Update') {
+          // Update existing release
+          const existingData = existingReleaseDoc.data();
+          
+          // Merge with existing data, preserving stats and certain fields
+          const updateData = {
+            ...releaseDoc,
+            stats: existingData.stats, // Preserve play counts
+            "ingestion.updatedAt": admin.firestore.FieldValue.serverTimestamp(),
+            "ingestion.updateCount": admin.firestore.FieldValue.increment(1),
+            "ingestion.deliveryHistory": admin.firestore.FieldValue.arrayUnion(deliveryId),
+            "ingestion.firstDeliveryId": existingData.ingestion?.firstDeliveryId || existingData.ingestion?.deliveryId
+          };
+          
+          await db.collection("releases").doc(releaseId).update({
+            ...updateData,
+            assets: {
+              coverArt: artwork.coverArt,
+              additionalArt: artwork.additional || []
+            },
+            trackIds: tracks.map(t => t.id),
+            status: "active",
+            "metadata.totalTracks": tracks.length,
+            "ingestion.completedAt": admin.firestore.FieldValue.serverTimestamp()
+          });
+          
+          logger.log(`Release updated: ${releaseId} - ${title} by ${artist}`);
+          
+          processedReleases.push({
+            releaseId,
+            title: releaseDoc.metadata.title,
+            artist: releaseDoc.metadata.displayArtist,
+            trackCount: tracks.length,
+            action: "update"
+          });
+          
+        } else {
+          // Create new release (or overwrite if duplicate NewRelease)
+          if (releaseExists) {
+            logger.warn(`Duplicate NewRelease message for UPC ${upc}, overwriting existing release`);
+            
+            // Preserve some fields from existing release
+            const existingData = existingReleaseDoc.data();
+            releaseDoc.stats = existingData.stats || releaseDoc.stats;
+            releaseDoc.ingestion.firstDeliveryId = existingData.ingestion?.firstDeliveryId || deliveryId;
+            releaseDoc.ingestion.deliveryHistory = [
+              ...(existingData.ingestion?.deliveryHistory || []),
+              deliveryId
+            ];
+          } else {
+            releaseDoc.ingestion.firstDeliveryId = deliveryId;
+          }
+          
+          // Store release
+          await db.collection("releases").doc(releaseId).set(releaseDoc);
+          logger.log(`Release document created/overwritten: ${releaseId}`);
+          
+          // Create or update artist profiles with error handling
+          try {
+            await processArtists(release, releaseId);
+          } catch (artistError) {
+            logger.error(`Failed to process artists for release ${releaseId}:`, artistError);
+          }
+          
+          // Create album document with error handling
+          try {
+            await createAlbum(releaseDoc, tracks, artwork);
+          } catch (albumError) {
+            logger.error(`Failed to create album for release ${releaseId}:`, albumError);
+          }
+          
+          // Update release with processed assets
+          await db.collection("releases").doc(releaseId).update({
+            assets: {
+              coverArt: artwork.coverArt,
+              additionalArt: artwork.additional || []
+            },
+            trackIds: tracks.map(t => t.id),
+            status: "active",
+            "metadata.totalTracks": tracks.length,
+            "ingestion.completedAt": admin.firestore.FieldValue.serverTimestamp()
+          });
+          
+          processedReleases.push({
+            releaseId,
+            title: releaseDoc.metadata.title,
+            artist: releaseDoc.metadata.displayArtist,
+            trackCount: tracks.length,
+            action: releaseExists ? "overwrite" : "create"
+          });
         }
-        
-        // Create album document with error handling
-        try {
-          await createAlbum(releaseDoc, tracks, artwork);
-        } catch (albumError) {
-          logger.error(`Failed to create album for release ${releaseId}:`, albumError);
-        }
-        
-        // Update release with processed assets
-        await db.collection("releases").doc(releaseId).update({
-          assets: {
-            coverArt: artwork.coverArt,
-            additionalArt: artwork.additional || []
-          },
-          trackIds: tracks.map(t => t.id),
-          status: "active",
-          "metadata.totalTracks": tracks.length,
-          "ingestion.completedAt": admin.firestore.FieldValue.serverTimestamp()
-        });
-        
-        processedReleases.push({
-          releaseId,
-          title: releaseDoc.metadata.title,
-          artist: releaseDoc.metadata.displayArtist,
-          trackCount: tracks.length
-        });
         
         logger.log(`Release processed successfully: ${releaseId} - ${title} by ${artist}`);
         
@@ -166,6 +264,16 @@ async function processReleases(deliveryId, releases, deliveryData) {
       throw new Error("No releases could be processed successfully");
     }
     
+    // Create delivery history record
+    await db.collection("deliveryHistory").doc(deliveryId).set({
+      deliveryId: deliveryId,
+      sender: deliveryData.sender,
+      messageType: messageType,
+      processedAt: admin.firestore.FieldValue.serverTimestamp(),
+      releases: processedReleases,
+      ernVersion: deliveryData.ern?.version || "ERN-4.3"
+    });
+    
     return processedReleases;
     
   } catch (error) {
@@ -174,7 +282,7 @@ async function processReleases(deliveryId, releases, deliveryData) {
   }
 }
 
-// Process individual tracks
+// Process individual tracks with UPC-based track IDs
 async function processTracks(release, releaseId, deliveryData) {
   const tracks = [];
   
@@ -201,7 +309,8 @@ async function processTracks(release, releaseId, deliveryData) {
                 recording.ResourceId?.ISRC || 
                 recording.RESOURCEID?.ISRC;
     
-    const trackId = isrc || `${releaseId}_TRACK_${index + 1}`;
+    // Use ISRC as primary track ID if available, otherwise use release_track pattern
+    const trackId = isrc ? `ISRC_${isrc}` : `${releaseId}_TRACK_${index + 1}`;
     
     // Extract MD5 hash (handle uppercase)
     let md5Hash = null;
@@ -244,6 +353,9 @@ async function processTracks(release, releaseId, deliveryData) {
     if (!audioUrl) {
       audioUrl = await getPublicUrl(`audio/original/${trackId}/audio.mp3`);
     }
+    
+    // Check if track already exists
+    const existingTrackDoc = await db.collection("tracks").doc(trackId).get();
     
     const track = {
       id: trackId,
@@ -291,8 +403,16 @@ async function processTracks(release, releaseId, deliveryData) {
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     };
     
-    // Store track
-    await db.collection("tracks").doc(track.id).set(track);
+    // Store or update track
+    if (existingTrackDoc.exists) {
+      // Preserve stats from existing track
+      const existingData = existingTrackDoc.data();
+      track.stats = existingData.stats || track.stats;
+      await db.collection("tracks").doc(track.id).update(track);
+    } else {
+      await db.collection("tracks").doc(track.id).set(track);
+    }
+    
     tracks.push(track);
     
     logger.log(`Track processed: ${track.id} - ${track.metadata.title} by ${track.metadata.displayArtist}`);
@@ -451,7 +571,7 @@ async function createAlbum(releaseDoc, tracks, artwork) {
   return albumDoc;
 }
 
-// Process and create/update artist profiles
+// Process and create/update artist profiles with deduplication
 async function processArtists(release, releaseId) {
   const artists = new Set();
   
@@ -486,10 +606,9 @@ async function processArtists(release, releaseId) {
     const artistDoc = await artistRef.get();
     
     if (artistDoc.exists) {
-      // Update existing artist
+      // Update existing artist - use arrayUnion to prevent duplicates
       await artistRef.update({
         releases: admin.firestore.FieldValue.arrayUnion(releaseId),
-        "stats.releaseCount": admin.firestore.FieldValue.increment(1),
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
       });
     } else {
