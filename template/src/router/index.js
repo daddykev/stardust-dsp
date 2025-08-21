@@ -8,6 +8,7 @@ import Distributors from '../views/Distributors.vue'
 import Ingestion from '../views/Ingestion.vue'
 import Catalog from '../views/Catalog.vue'
 import Library from '../views/Library.vue'
+import Settings from '../views/Settings.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -39,6 +40,12 @@ const router = createRouter({
       path: '/catalog',
       name: 'catalog',
       component: Catalog,
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/settings',
+      name: 'settings',
+      component: Settings,
       meta: { requiresAuth: true }
     },
     {
