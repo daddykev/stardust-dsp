@@ -98,6 +98,11 @@ validating → processing_releases → completed (or failed/cancelled)
 3. **MD5 Validation**: Ensures file integrity during transfers
 4. **Lock-Based Concurrency**: Simple, effective prevention of race conditions
 
+## Technical Documentation
+
+For detailed technical specifications, see:
+- **DDEX Standards**: [`src/docs/DDEX.md`](../src/docs/DDEX.md) - Complete DDEX implementation standards
+
 ## Unified Authentication Strategy
 
 Stardust DSP integrates with the ecosystem authentication while maintaining its own user base:
@@ -284,6 +289,7 @@ stardust-dsp/
 │   ├── package.json              # Dependencies ✅
 │   └── vite.config.js            # Vite config ✅
 ├── docs/                         # Documentation
+│   ├── DDEX.md                   # Unified implementation standards ✅
 │   ├── getting-started.md        # Quick start guide ❌
 │   ├── ingestion-guide.md        # ERN ingestion ❌
 │   ├── streaming-setup.md        # Streaming config ❌
@@ -976,35 +982,160 @@ interface Play {
   counted: boolean; // For royalty calculation (30s+)
 }
 
-// deliveries collection (ingestion log)
+// deliveries collection (enhanced)
 interface Delivery {
   id: string;
   sender: string;
-  
-  package: {
-    originalPath: string;
-    size: number;
-    files: string[];
-  };
+  messageId: string; // DDEX MessageId from ERN
   
   ern: {
-    messageId: string;
-    version: string;
+    version: '3.8.2' | '4.1' | '4.2' | '4.3';
+    profile: string; // e.g., 'AudioAlbum'
+    messageType: 'NewReleaseMessage'; // Currently only type supported
+    messageSubType?: 'Initial' | 'Update' | 'Takedown'; // Detected from content
+    messageId: string; // Preserved from original
     releaseCount: number;
+    parsedMessageId?: string; // If different from original
   };
   
   processing: {
     receivedAt: Timestamp;
-    startedAt?: Timestamp;
-    completedAt?: Timestamp;
-    status: 'pending' | 'processing' | 'completed' | 'failed';
-    errors?: ProcessingError[];
+    status: ProcessingStatus;
+    releases?: ProcessedRelease[]; // Includes action taken per release
   };
   
-  acknowledgment?: {
-    sentAt: Timestamp;
-    messageId: string;
+  validation: {
+    valid: boolean;
+    errors: string[];
+    warnings: string[];
   };
+  
+  files: {
+    transferred: {
+      audio: TransferredFile[];
+      images: TransferredFile[];
+    };
+    md5ValidationStatus: 'passed' | 'warnings' | 'failed';
+  };
+}
+
+// releases collection (enhanced)
+interface Release {
+  id: string; // UPC_{upc} or GR_{grid}
+  upc: string; // Primary identifier
+  
+  ingestion: {
+    deliveryId: string;
+    firstDeliveryId: string; // Original delivery
+    deliveryHistory: string[]; // All delivery IDs
+    messageType: 'Initial' | 'Update' | 'Takedown';
+    updateCount: number;
+    takedownAt?: Timestamp;
+    takedownDeliveryId?: string;
+  };
+  
+  status: 'active' | 'taken_down' | 'processing';
+  
+  // ... rest of release fields
+}
+
+// deliveryHistory collection (new)
+interface DeliveryHistoryRecord {
+  deliveryId: string;
+  sender: string;
+  messageType: 'Initial' | 'Update' | 'Takedown';
+  processedAt: Timestamp;
+  releases: Array<{
+    releaseId: string;
+    title: string;
+    artist: string;
+    action: 'create' | 'update' | 'overwrite' | 'takedown';
+    trackCount: number;
+  }>;
+  ernVersion: string;
+}
+```
+
+## DDEX Standards & Message Types
+
+### ERN Processing Architecture
+Stardust DSP implements DDEX ERN 4.3 as the primary ingestion format, with backward compatibility for ERN 3.8.2.
+
+### Message Type Handling
+
+#### Reception and Processing
+The DSP processes three message subtypes differently based on the delivery history:
+
+**Initial Deliveries:**
+- Creates new release document with UPC-based ID (`UPC_{upc}`)
+- Processes all tracks and assets
+- Creates artist profiles if new
+- Sets status to "active"
+
+**Update Deliveries:**
+- Merges with existing release data
+- Preserves play counts and user-generated data
+- Updates metadata and assets
+- Increments update counter
+- Maintains delivery history
+
+**Takedown Deliveries:**
+- Sets release status to "taken_down"
+- Preserves all data for reporting
+- Removes from public catalog
+- Records takedown timestamp
+
+### UPC-Based Deduplication
+The platform uses UPC as the primary identifier to prevent duplicate releases:
+
+```javascript
+// Document ID strategy
+const releaseId = upc ? `UPC_${upc}` : `GR_${gridId}`;
+
+// Check for existing release
+const existingRelease = await db.collection("releases").doc(releaseId).get();
+
+if (existingRelease.exists && messageType === 'Update') {
+  // Merge with existing
+} else if (existingRelease.exists && messageType === 'Initial') {
+  // Log warning and overwrite (duplicate delivery)
+} else {
+  // Create new
+}
+```
+
+### Delivery History Tracking
+Each release maintains a complete delivery history:
+
+```javascript
+interface DeliveryHistory {
+  deliveryId: string;
+  messageType: 'Initial' | 'Update' | 'Takedown';
+  processedAt: Timestamp;
+  sender: string;
+  ernVersion: string;
+}
+```
+
+### File Transfer with DDEX Naming
+During file transfer, the DSP renames files to DDEX-compliant names:
+
+```javascript
+// Extract UPC from parsed ERN
+const upc = release.RELEASEID?.ICPN?._; 
+
+// Generate DDEX filenames
+const audioFile = `${upc}_${discNumber}_${trackNumber}.wav`;
+const coverArt = `${upc}.jpg`;
+```
+
+### MD5 Validation
+Files are validated during transfer but mismatches are treated as warnings:
+
+```javascript
+if (expectedMD5 !== calculatedMD5) {
+  console.warn('MD5 mismatch - expected if re-encoded');
+  // Continue processing with warning flag
 }
 ```
 
