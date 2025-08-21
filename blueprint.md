@@ -101,7 +101,7 @@ validating → processing_releases → completed (or failed/cancelled)
 ## Technical Documentation
 
 For detailed technical specifications, see:
-- **DDEX Standards**: [`src/docs/DDEX.md`](../src/docs/DDEX.md) - Complete DDEX implementation standards
+- **DDEX Standards**: [`src/docs/DDEX.md`](../template/src/docs/DDEX.md) - Complete DDEX implementation standards
 
 ## Unified Authentication Strategy
 
