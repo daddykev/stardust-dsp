@@ -473,18 +473,18 @@ async function transferDeliveryFiles(deliveryId) {
           
           // Get MD5 hash
           const hashSum = file.HashSum || 
-                         file.HASHSUM || 
-                         file.hashSum || 
-                         {};
-          
+                        file.HASHSUM || 
+                        file.hashSum || 
+                        {};
+
           if (hashSum) {
             const hashType = hashSum.HashSumAlgorithmType || 
                             hashSum.HASHSUMALGORITHMTYPE || 
                             hashSum.hashSumAlgorithmType;
             
             let hashValue = hashSum.HashSum || 
-                           hashSum.HASHSUM || 
-                           hashSum.hashSum;
+                          hashSum.HASHSUM || 
+                          hashSum.hashSum;
             
             // Handle case where HashSum might be an object
             if (typeof hashValue === 'object' && hashValue !== null) {

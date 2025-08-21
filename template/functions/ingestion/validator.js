@@ -373,9 +373,13 @@ function detectProfile(ernData, ernVersion) {
   const messageHeader = ernData.MESSAGEHEADER || {};
   const controlType = messageHeader.MESSAGECONTROLTYPE;
   
-  // Handle test messages by inferring from content
-  if (controlType === "TestMessage" || controlType === "Test" || controlType === "LiveMessage") {
-    logger.log("TestMessage/LiveMessage detected, inferring profile from content");
+  if (controlType === "UpdateMessage" || 
+      controlType === "OriginalMessage" || 
+      controlType === "TestMessage" || 
+      controlType === "Test" || 
+      controlType === "LiveMessage") {
+    
+    logger.log(`MessageControlType '${controlType}' detected, inferring profile from content`);
     
     const releaseList = ernData.RELEASELIST || {};
     const releases = releaseList.RELEASE || [];
@@ -384,13 +388,28 @@ function detectProfile(ernData, ernVersion) {
     if (firstRelease) {
       const releaseType = firstRelease.RELEASETYPE;
       
+      // Check for video content first
+      const resourceList = ernData.RESOURCELIST || {};
+      const hasVideo = resourceList.VIDEO || resourceList.VIDEOCLIP;
+      
+      if (hasVideo) {
+        if (releaseType === "Single") {
+          return "VideoSingle";
+        } else if (releaseType === "Album" || releaseType === "EP") {
+          return "VideoAlbum";
+        }
+      }
+      
+      // Audio content
       if (releaseType === "Single") {
         return "AudioSingleMusicOnly";
-      } else if (releaseType === "Album") {
+      } else if (releaseType === "Album" || releaseType === "EP") {
+        return "AudioAlbumMusicOnly";
+      } else if (releaseType === "Compilation") {
         return "AudioAlbumMusicOnly";
       }
       
-      // Check track count
+      // Fallback: Check track count
       const resourceRefs = firstRelease.RELEASERESOURCEREFERENCELIST;
       if (resourceRefs) {
         const refList = resourceRefs.RELEASERESOURCEREFERENCE || [];
@@ -409,12 +428,29 @@ function detectProfile(ernData, ernVersion) {
     return "AudioSingleMusicOnly";
   }
   
-  // Return the control type if it's valid
-  if (controlType && controlType !== "TestMessage") {
+  // Check if controlType is actually a valid profile name
+  const validProfiles = [
+    "AudioAlbumMusicOnly",
+    "AudioSingleMusicOnly", 
+    "VideoAlbum",
+    "VideoSingle",
+    "CommonReleaseProfile"
+  ];
+  
+  if (controlType && validProfiles.includes(controlType)) {
     return controlType;
   }
   
-  // Default
+  // Default: infer from content
+  logger.log("No valid profile found, inferring from content");
+  const releaseList = ernData.RELEASELIST || {};
+  const releases = releaseList.RELEASE || [];
+  const firstRelease = Array.isArray(releases) ? releases[0] : releases;
+  
+  if (firstRelease?.RELEASETYPE === "Single") {
+    return "AudioSingleMusicOnly";
+  }
+  
   return "AudioAlbumMusicOnly";
 }
 
