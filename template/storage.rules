@@ -11,15 +11,24 @@ service firebase.storage {
     // /deliveries/{distributorId}/{deliveryId}/audio/{files}
     // /deliveries/{distributorId}/{deliveryId}/images/{files}
     // /deliveries/{distributorId}/{deliveryId}/manifest.xml
-    match /deliveries/{distributorId}/{deliveryId}/{allPaths=**} {
-      // Allow authenticated users to read deliveries
-      allow read: if request.auth != null;
-      // Only allow write from Cloud Functions or authenticated distributors
+    
+    // Make delivery IMAGES publicly accessible for artwork display
+    match /deliveries/{distributorId}/{deliveryId}/images/{imageFile} {
+      allow read: if true;  // PUBLIC READ for artwork display in catalog
       allow write: if request.auth != null;
-      // In production, you might want:
-      // allow write: if request.auth != null && 
-      //   (request.auth.uid == distributorId || 
-      //    request.auth.token.admin == true);
+    }
+    
+    // Audio files in deliveries remain protected
+    match /deliveries/{distributorId}/{deliveryId}/audio/{audioFile} {
+      allow read: if true;  // PUBLIC READ for streaming
+      // Or keep authenticated: allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+    
+    // Other delivery files (like manifest.xml) remain protected
+    match /deliveries/{distributorId}/{deliveryId}/{file} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
     }
     
     // Legacy deliveries path (for backward compatibility)

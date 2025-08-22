@@ -234,7 +234,7 @@ async function processReleases(deliveryId, releases, deliveryData) {
           // Update release with processed assets
           await db.collection("releases").doc(releaseId).update({
             assets: {
-              coverArt: artwork.coverArt,
+              coverArt: artwork.coverArt, // This should be a string URL, not an object
               additionalArt: artwork.additional || []
             },
             trackIds: tracks.map(t => t.id),
@@ -501,10 +501,9 @@ async function processArtwork(release, releaseId, deliveryData) {
     if (imageType === "FrontCoverImage" || 
         imageType === "FRONTCOVERIMAGE" || 
         (!artwork.coverArt && imageType.toUpperCase().includes("COVER"))) {
-      artwork.coverArt = {
-        ...imageDoc,
-        sizes: generateImageSizeUrls(imageUrl, releaseId)
-      };
+      // Store just the URL string, not an object
+      artwork.coverArt = imageUrl; // Just the string URL
+      // Remove the sizes generation for now, or store separately
     } else {
       artwork.additional.push(imageDoc);
     }
