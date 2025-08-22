@@ -1674,3 +1674,63 @@ exports.deduplicateReleases = onRequest({
     response.status(500).json({ error: error.message });
   }
 });
+
+/**
+ * Quick fix to update all releases to active status if they're stuck
+ */
+exports.fixAllReleaseStatus = onRequest({
+  cors: true
+}, async (request, response) => {
+  try {
+    const db = admin.firestore();
+    
+    // Get all releases
+    const releasesSnapshot = await db.collection('releases').get();
+    
+    const batch = db.batch();
+    let processedCount = 0;
+    let activeCount = 0;
+    let fixedCount = 0;
+    
+    releasesSnapshot.docs.forEach(doc => {
+      const data = doc.data();
+      const currentStatus = data.status;
+      
+      if (currentStatus === 'processing') {
+        // Fix releases stuck in processing
+        batch.update(doc.ref, { 
+          status: 'active',
+          'ingestion.statusFixed': true,
+          'ingestion.fixedAt': admin.firestore.FieldValue.serverTimestamp()
+        });
+        fixedCount++;
+      } else if (!currentStatus) {
+        // Fix releases with no status
+        batch.update(doc.ref, { 
+          status: 'active',
+          'ingestion.statusFixed': true,
+          'ingestion.fixedAt': admin.firestore.FieldValue.serverTimestamp()
+        });
+        fixedCount++;
+      } else if (currentStatus === 'active') {
+        activeCount++;
+      }
+      
+      processedCount++;
+    });
+    
+    await batch.commit();
+    
+    response.json({
+      success: true,
+      totalReleases: processedCount,
+      alreadyActive: activeCount,
+      fixed: fixedCount,
+      message: `Fixed ${fixedCount} releases to active status`
+    });
+    
+  } catch (error) {
+    console.error('Error fixing release status:', error);
+    response.status(500).json({ error: error.message });
+  }
+});

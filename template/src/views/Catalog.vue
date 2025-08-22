@@ -87,11 +87,17 @@
             @click="viewRelease(release)"
           >
             <div class="release-artwork">
+              <!-- Use v-if to conditionally show image or placeholder -->
               <img 
+                v-if="getArtworkUrl(release)"
                 :src="getArtworkUrl(release)" 
                 :alt="getReleaseTitle(release)"
-                @error="handleImageError"
+                @error="(e) => handleImageError(e, release)"
               />
+              <!-- Icon placeholder -->
+              <div v-else class="artwork-placeholder">
+                <font-awesome-icon icon="compact-disc" />
+              </div>
               <div class="release-overlay">
                 <button class="play-btn" @click.stop="playRelease(release)">
                   <font-awesome-icon icon="play" />
@@ -187,10 +193,14 @@
           >
             <div class="artist-image">
               <img 
-                :src="artist.profile?.image || '/placeholder-artist.png'" 
+                v-if="artist.profile?.image"
+                :src="artist.profile.image" 
                 :alt="artist.name"
-                @error="handleImageError"
+                @error="(e) => handleArtistImageError(e, artist)"
               />
+              <div v-else class="artist-placeholder">
+                <font-awesome-icon icon="user" />
+              </div>
             </div>
             <div class="artist-info">
               <h3 class="artist-name">{{ artist.name }}</h3>
@@ -231,10 +241,15 @@
         <div class="mini-player-content container">
           <div class="track-info">
             <img 
+              v-if="getTrackArtwork(player.currentTrack.value)"
               :src="getTrackArtwork(player.currentTrack.value)" 
               :alt="getTrackTitle(player.currentTrack.value)"
               class="track-artwork"
+              @error="handleMiniPlayerImageError"
             />
+            <div v-else class="track-artwork artwork-placeholder-mini">
+              <font-awesome-icon icon="music" />
+            </div>
             <div class="track-details">
               <h4>{{ getTrackTitle(player.currentTrack.value) }}</h4>
               <p>{{ getTrackArtist(player.currentTrack.value) }}</p>
@@ -317,10 +332,29 @@ function getReleaseTrackCount(release) {
 }
 
 function getArtworkUrl(release) {
-  return release?.assets?.coverArt?.url || 
-         release?.assets?.coverArt || 
-         release?.artworkUrl || 
-         '/placeholder-album.png'
+  // Handle different possible structures
+  let url = null;
+  
+  // If assets.coverArt is a string (correct format)
+  if (typeof release?.assets?.coverArt === 'string' && release.assets.coverArt) {
+    url = release.assets.coverArt;
+  }
+  // If assets.coverArt is an object with url property
+  else if (release?.assets?.coverArt?.url) {
+    url = release.assets.coverArt.url;
+  }
+  // If there's a direct artworkUrl property
+  else if (release?.artworkUrl) {
+    url = release.artworkUrl;
+  }
+  
+  // Only return valid URLs
+  if (url && url !== 'null' && url !== 'undefined' && (url.startsWith('http') || url.startsWith('data:'))) {
+    return url;
+  }
+  
+  // Return null to trigger the icon placeholder
+  return null;
 }
 
 function getTrackTitle(track) {
@@ -336,7 +370,13 @@ function getTrackDuration(track) {
 }
 
 function getTrackArtwork(track) {
-  return track?.artworkUrl || track?.audio?.artwork || '/placeholder-album.png'
+  let url = track?.artworkUrl || track?.audio?.artwork;
+  
+  if (url && url !== 'null' && url !== 'undefined' && (url.startsWith('http') || url.startsWith('data:'))) {
+    return url;
+  }
+  
+  return null;
 }
 
 function getAlbumTitle(track) {
@@ -510,8 +550,24 @@ function formatDuration(seconds) {
   return `${mins}:${secs.toString().padStart(2, '0')}`
 }
 
-function handleImageError(e) {
-  e.target.src = '/placeholder-album.png'
+function handleImageError(e, release) {
+  console.warn(`Failed to load artwork for ${getReleaseTitle(release)}:`, e.target.src);
+  // Hide the image and let v-else show the placeholder
+  e.target.style.display = 'none';
+  // Add a data attribute to the parent to show placeholder
+  e.target.parentElement.classList.add('show-placeholder');
+}
+
+function handleArtistImageError(e, artist) {
+  console.warn(`Failed to load image for artist ${artist.name}:`, e.target.src);
+  e.target.style.display = 'none';
+  e.target.parentElement.classList.add('show-placeholder');
+}
+
+function handleMiniPlayerImageError(e) {
+  console.warn('Failed to load mini player artwork:', e.target.src);
+  e.target.style.display = 'none';
+  e.target.parentElement.classList.add('show-placeholder');
 }
 
 function handleSeek(e) {
@@ -789,6 +845,102 @@ onMounted(() => {
   color: var(--color-text-tertiary);
 }
 
+/* Artwork Placeholder Styles */
+.artwork-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--color-primary-light) 0%, var(--color-secondary-light) 100%);
+  color: var(--color-primary);
+  font-size: 3rem;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Add a subtle pattern */
+.artwork-placeholder::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: 
+    repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 10px,
+      rgba(255, 255, 255, 0.05) 10px,
+      rgba(255, 255, 255, 0.05) 20px
+    );
+}
+
+.artwork-placeholder svg {
+  position: relative;
+  z-index: 1;
+  animation: rotate-slow 20s linear infinite;
+}
+
+@keyframes rotate-slow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Mini player placeholder */
+.artwork-placeholder-mini {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--color-primary-light) 0%, var(--color-secondary-light) 100%);
+  color: var(--color-primary);
+  font-size: 1.2rem;
+  border-radius: var(--radius-md);
+}
+
+/* Hide broken images and show placeholder */
+.release-artwork.show-placeholder img,
+.artist-image.show-placeholder img {
+  display: none !important;
+}
+
+.release-artwork.show-placeholder::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--color-primary-light) 0%, var(--color-secondary-light) 100%);
+  color: var(--color-primary);
+  font-family: 'Font Awesome 6 Free';
+  font-weight: 900;
+  font-size: 3rem;
+  /* Unicode for compact-disc icon */
+  content: '\f51f';
+}
+
+.artist-image.show-placeholder::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--color-bg-secondary) 0%, var(--color-border) 100%);
+  color: var(--color-text-tertiary);
+  font-family: 'Font Awesome 6 Free';
+  font-weight: 900;
+  font-size: 2.5rem;
+  border-radius: var(--radius-full);
+  /* Unicode for user icon */
+  content: '\f007';
+}
+
 /* Tracks Table */
 .tracks-list {
   background-color: var(--color-surface);
@@ -929,12 +1081,24 @@ onMounted(() => {
   border-radius: var(--radius-full);
   overflow: hidden;
   background-color: var(--color-bg-secondary);
+  position: relative;
 }
 
 .artist-image img {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.artist-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--color-bg-secondary) 0%, var(--color-border) 100%);
+  color: var(--color-text-tertiary);
+  font-size: 2.5rem;
 }
 
 .artist-name {
@@ -1109,6 +1273,22 @@ onMounted(() => {
   to { transform: rotate(360deg); }
 }
 
+/* Dark theme adjustments */
+[data-theme="dark"] .artwork-placeholder {
+  background: linear-gradient(135deg, var(--color-bg-tertiary) 0%, var(--color-surface) 100%);
+  color: var(--color-text-secondary);
+}
+
+[data-theme="dark"] .artwork-placeholder-mini {
+  background: linear-gradient(135deg, var(--color-bg-tertiary) 0%, var(--color-surface) 100%);
+  color: var(--color-text-secondary);
+}
+
+[data-theme="dark"] .artist-placeholder {
+  background: linear-gradient(135deg, var(--color-surface) 0%, var(--color-bg-tertiary) 100%);
+  color: var(--color-text-tertiary);
+}
+
 /* Transitions */
 .slide-up-enter-active,
 .slide-up-leave-active {
@@ -1146,6 +1326,18 @@ onMounted(() => {
   .artist-image {
     width: 80px;
     height: 80px;
+  }
+  
+  .artwork-placeholder {
+    font-size: 2rem;
+  }
+  
+  .artist-placeholder {
+    font-size: 1.5rem;
+  }
+  
+  .artwork-placeholder-mini {
+    font-size: 1rem;
   }
   
   .mini-player-content {

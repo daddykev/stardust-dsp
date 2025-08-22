@@ -33,14 +33,32 @@ export function useCatalog() {
     error.value = null
     
     try {
+      console.log('Fetching releases with status = active...')
+      
+      // First, let's check if there are ANY releases
+      const allReleasesSnapshot = await getDocs(collection(db, 'releases'))
+      console.log(`Total releases in database: ${allReleasesSnapshot.size}`)
+      
+      // Check status distribution
+      const statusCounts = {}
+      allReleasesSnapshot.docs.forEach(doc => {
+        const data = doc.data()
+        const status = data.status || 'undefined'
+        statusCounts[status] = (statusCounts[status] || 0) + 1
+      })
+      console.log('Release status distribution:', statusCounts)
+      
+      // Now fetch active releases with correct field path
       const q = query(
         collection(db, 'releases'),
         where('status', '==', 'active'),
-        orderBy('releaseDate', 'desc'),
+        orderBy('ingestion.processedAt', 'desc'),  // Changed from 'releaseDate' to correct path
         limit(limitCount)
       )
       
       const snapshot = await getDocs(q)
+      console.log(`Found ${snapshot.size} active releases`)
+      
       releases.value = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
@@ -56,6 +74,38 @@ export function useCatalog() {
     } catch (err) {
       console.error('Error fetching releases:', err)
       error.value = err.message
+      
+      // If the error is about the index, try without ordering
+      if (err.message.includes('index')) {
+        console.log('Index error, trying without orderBy...')
+        try {
+          const simpleQuery = query(
+            collection(db, 'releases'),
+            where('status', '==', 'active'),
+            limit(limitCount)
+          )
+          
+          const snapshot = await getDocs(simpleQuery)
+          console.log(`Found ${snapshot.size} active releases (without ordering)`)
+          
+          releases.value = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }))
+          
+          // Sort in memory
+          releases.value.sort((a, b) => {
+            const aDate = a.ingestion?.processedAt?.toMillis() || 0
+            const bDate = b.ingestion?.processedAt?.toMillis() || 0
+            return bDate - aDate
+          })
+          
+          return releases.value
+        } catch (fallbackErr) {
+          console.error('Fallback query also failed:', fallbackErr)
+        }
+      }
+      
       return []
     } finally {
       isLoading.value = false
@@ -74,7 +124,7 @@ export function useCatalog() {
       const q = query(
         collection(db, 'releases'),
         where('status', '==', 'active'),
-        orderBy('releaseDate', 'desc'),
+        orderBy('ingestion.processedAt', 'desc'),  // Changed from 'releaseDate'
         startAfter(lastDoc.value),
         limit(limitCount)
       )
