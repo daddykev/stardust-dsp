@@ -114,6 +114,40 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
+          "fieldPath": "metadata.displayArtist",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "releases",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "metadata.genre",
+          "arrayConfig": "CONTAINS"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "metadata.releaseDate",
+          "order": "DESCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "releases",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
           "fieldPath": "senderId",
           "order": "ASCENDING"
         },
@@ -134,21 +168,6 @@
         },
         {
           "fieldPath": "createdAt",
-          "order": "DESCENDING"
-        }
-      ],
-      "density": "SPARSE_ALL"
-    },
-    {
-      "collectionGroup": "releases",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "status",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "releaseDate",
           "order": "DESCENDING"
         }
       ],
@@ -185,6 +204,21 @@
       "density": "SPARSE_ALL"
     },
     {
+      "collectionGroup": "releases",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "releaseDate",
+          "order": "DESCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
       "collectionGroup": "tracks",
       "queryScope": "COLLECTION",
       "fields": [
@@ -208,7 +242,7 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "trackNumber",
+          "fieldPath": "metadata.trackNumber",
           "order": "ASCENDING"
         }
       ],
@@ -223,22 +257,7 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "metadata.trackNumber",
-          "order": "ASCENDING"
-        }
-      ],
-      "density": "SPARSE_ALL"
-    },
-    {
-      "collectionGroup": "releases",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "metadata.displayArtist",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "status",
+          "fieldPath": "trackNumber",
           "order": "ASCENDING"
         }
       ],

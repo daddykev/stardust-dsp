@@ -9,6 +9,7 @@ import Ingestion from '../views/Ingestion.vue'
 import Catalog from '../views/Catalog.vue'
 import Library from '../views/Library.vue'
 import Settings from '../views/Settings.vue'
+import Testing from '../views/Testing.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -46,6 +47,12 @@ const router = createRouter({
       path: '/settings',
       name: 'settings',
       component: Settings,
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/testing',
+      name: 'testing',
+      component: Testing,
       meta: { requiresAuth: true }
     },
     {
