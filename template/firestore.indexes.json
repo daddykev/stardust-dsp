@@ -9,6 +9,21 @@
           "order": "ASCENDING"
         },
         {
+          "fieldPath": "processing.completedAt",
+          "order": "DESCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "deliveries",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "processing.status",
+          "order": "ASCENDING"
+        },
+        {
           "fieldPath": "processing.receivedAt",
           "order": "ASCENDING"
         }
