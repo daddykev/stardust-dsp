@@ -20,6 +20,19 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
     
+    // Invite codes collection
+    match /inviteCodes/{codeId} {
+      // Anyone can read invite codes to validate during signup
+      allow read: if true;
+      // Only admins can create or modify invite codes
+      allow create: if isAdmin();
+      allow update: if isAdmin() || 
+        // Allow incrementing usage count during signup
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usedCount', 'lastUsedAt', 'lastUsedBy']) &&
+         request.resource.data.usedCount == resource.data.usedCount + 1);
+      allow delete: if isAdmin();
+    }
+    
     // Public collections (read-only for all)
     match /releases/{releaseId} {
       allow read: if true;
@@ -97,19 +110,19 @@ service cloud.firestore {
       allow delete: if false;
     }
     
-    // File transfer collection (new)
+    // File transfer collection
     match /fileTransfers/{transferId} {
       allow read: if isAdmin() || isIndustryUser();
       allow write: if false; // Only Cloud Functions can write
     }
     
-    // Acknowledgments collection (new)
+    // Acknowledgments collection
     match /acknowledgments/{acknowledgmentId} {
       allow read: if isIndustryUser() || isAdmin();
       allow write: if false; // Only Cloud Functions can write
     }
     
-    // Notifications collection (new)
+    // Notifications collection
     match /notifications/{notificationId} {
       // Users can read their own notifications
       allow read: if isAuthenticated() && 
@@ -139,6 +152,12 @@ service cloud.firestore {
     match /cache/{cacheId} {
       allow read: if true;
       allow write: if false;
+    }
+    
+    // Delivery history collection
+    match /deliveryHistory/{historyId} {
+      allow read: if isIndustryUser() || isAdmin();
+      allow write: if false; // Only Cloud Functions can write
     }
   }
 }
