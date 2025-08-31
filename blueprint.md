@@ -117,37 +117,6 @@ validating → processing_releases → completed (or failed/cancelled)
 For detailed technical specifications, see:
 - **DDEX Standards**: [`src/docs/DDEX.md`](../main/template/src/docs/DDEX.md) - Complete DDEX implementation standards
 
-## Unified Authentication Strategy
-
-Stardust DSP integrates with the ecosystem authentication while maintaining its own user base:
-
-```javascript
-// Dual authentication model
-import { initializeAuth } from '@stardust-ecosystem/auth';
-
-// Industry auth (for deliveries/testing)
-const industryAuth = initializeAuth({
-  project: 'stardust-ecosystem',
-  domain: 'auth.stardust-ecosystem.org'
-});
-
-// Consumer auth (for listeners)
-const consumerAuth = initializeAuth({
-  project: 'my-dsp',
-  domain: 'auth.my-streaming-service.com'
-});
-
-// Enables:
-// - Labels to test deliveries from Stardust Distro
-// - Separate consumer accounts for streaming
-// - Analytics across the ecosystem
-```
-
-### Authentication Flows
-1. **Industry Users**: Labels/distributors sending content
-2. **Consumer Users**: Listeners accessing the platform
-3. **Admin Users**: Platform operators and moderators
-
 ## Project Structure
 
 ```
@@ -297,7 +266,6 @@ stardust-dsp/
 ### **Summary of Current Status:**
 - **Core App (template/)**: 65% complete - All Phase 3 features complete
 - **CLI Tool**: ✅ 100% complete - All commands created and functional
-- **Packages**: 15% complete - @stardust-dsp/dsp-core started with ERN processor
 - **Services**: 25% complete - Streaming service implemented
 - **Components**: 15% complete - NavBar and FullPlayer created
 - **Composables**: ✅ 100% complete - All composables implemented (useAuth, useDualAuth, useCatalog, usePlayer, useLibrary)
@@ -1630,23 +1598,6 @@ npm run deploy
 # Your DSP is live! 🎵
 ```
 
-### Test with Stardust Distro
-```bash
-# Send test delivery from Stardust Distro
-stardust-distro deliver \
-  --target=http://localhost:5001/api/deliveries \
-  --release=test-album
-
-# Check ingestion status
-stardust-dsp deliveries list
-```
-
-### Next Steps
-1. Configure your brand
-2. Set up payment processing
-3. Customize the interface
-4. Launch to the world
-
 ## Development Setup
 
 ### Prerequisites
@@ -1683,25 +1634,7 @@ npm run dev
 
 ### Code Style
 - Vue 3 Composition API
-- ESLint configuration
 - Semantic commit messages
-- JSDoc comments
-
-## Known Issues & TODOs
-
-### Technical Debt
-- [ ] Add comprehensive error handling
-- [ ] Implement proper logging
-- [ ] Add input validation
-- [ ] Create unit tests
-- [ ] Add TypeScript to template
-
-### Documentation Needs
-- [ ] Create README.md
-- [ ] Write API documentation
-- [ ] Create user guides
-- [ ] Add code comments
-- [ ] Create video tutorials
 
 ## License
 
@@ -1715,4 +1648,4 @@ MIT License - Free for commercial and personal use
 
 ---
 
-The future of music streaming is open, compliant, and yours to build.
+*The future of music streaming is open, compliant, and yours to build.*
