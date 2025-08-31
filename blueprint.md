@@ -17,7 +17,9 @@ Enable anyone to launch a DDEX-compliant streaming service in minutes, from test
 ### Official App Build
 **URL**: [https://stardust-dsp.org](https://stardust-dsp.org)
 
-## Development Status (August 2025)
+## Development Status
+
+**Alpha Release - v0.7.0** (August 2025)
 
 ### ✅ Phase 1: Foundation - COMPLETE
 - Full Vue 3 application with routing and views
@@ -161,102 +163,18 @@ stardust-dsp/
 │   │   ├── dev.js                # Development server ✅
 │   │   └── deliveries.js         # Manage deliveries ✅
 │   ├── templates/                # Project templates
-│   │   ├── streaming/            # Full streaming platform ❌
-│   │   ├── catalog/              # Catalog-only (B2B) ❌
-│   │   └── test/                 # Test environment ❌
+│   │   └── default/              # Full streaming platform ❌
 │   └── package.json              # CLI dependencies ✅
-├── packages/                     # Core packages
-│   ├── @stardust-dsp/dsp-core/   # Core DSP logic
-│   │   ├── src/
-│   │   │   ├── ingestion/        # ERN processing
-│   │   │   │   └── ern-processor.ts # ERN processor ✅
-│   │   │   ├── catalog/          # Catalog management ❌
-│   │   │   ├── streaming/        # Playback engine ❌
-│   │   │   └── reporting/        # DSR generation ❌
-│   │   └── package.json          # Package config ✅
-│   ├── @stardust-dsp/player/     # Audio player
-│   │   ├── src/
-│   │   │   ├── components/       # Player UI ❌
-│   │   │   ├── engine/           # Playback logic ❌
-│   │   │   └── drm/              # Rights management ❌
-│   │   └── package.json          # Package config ❌
-│   └── @stardust-dsp/storefront/ # Public UI components
-│       ├── src/
-│       │   ├── browse/           # Browse components ❌
-│       │   ├── search/           # Search interface ❌
-│       │   ├── player/           # Player integration ❌
-│       │   └── account/          # User account ❌
-│       └── package.json          # Package config ❌
 ├── template/                     # Default project template
-│   ├── src/                      # Vue application
-│   │   ├── components/           # UI components
-│   │   │   ├── NavBar.vue        # Navigation component ✅
-│   │   │   ├── browse/           # Browse & discovery
-│   │   │   │   ├── HomePage.vue  # Home page ❌
-│   │   │   │   ├── AlbumGrid.vue # Album grid ❌
-│   │   │   │   ├── ArtistPage.vue # Artist page ❌
-│   │   │   │   └── GenreExplorer.vue # Genre explorer ❌
-│   │   │   ├── player/           # Music player
-│   │   │   │   ├── FullPlayer.vue # Full player view ✅
-│   │   │   │   ├── NowPlaying.vue # Now playing view ❌
-│   │   │   │   ├── Queue.vue     # Queue management ❌
-│   │   │   │   ├── Controls.vue  # Player controls ❌
-│   │   │   │   └── ProgressBar.vue # Progress indicator ❌
-│   │   │   ├── search/           # Search functionality
-│   │   │   │   ├── SearchBar.vue # Search input ❌
-│   │   │   │   ├── SearchResults.vue # Results display ❌
-│   │   │   │   └── Filters.vue   # Search filters ❌
-│   │   │   ├── library/          # User library
-│   │   │   │   ├── Playlists.vue # Playlist management ❌
-│   │   │   │   ├── Favorites.vue # Favorite tracks ❌
-│   │   │   │   └── History.vue   # Listening history ❌
-│   │   │   └── admin/            # Admin panel
-│   │   │       ├── Deliveries.vue # Delivery management ❌
-│   │   │       ├── Catalog.vue   # Catalog admin ❌
-│   │   │       └── Analytics.vue # Analytics dashboard ❌
-│   │   ├── views/                # Page views
-│   │   │   ├── Dashboard.vue     # User dashboard ✅
-│   │   │   ├── Login.vue         # Login page ✅
-│   │   │   ├── Signup.vue        # Signup page ✅
-│   │   │   ├── SplashPage.vue    # Landing page ✅
-│   │   │   ├── Distributors.vue  # Distributor management ✅
-│   │   │   ├── Ingestion.vue     # Ingestion monitoring ✅
-│   │   │   ├── IngestionDetail.vue # Delivery details ✅
-│   │   │   ├── Catalog.vue       # Browse catalog ✅
-│   │   │   ├── ReleaseDetail.vue # Release/Album details ✅
-│   │   │   ├── Artist.vue        # Artist profile ✅
-│   │   │   ├── Library.vue       # User library ✅
-│   │   │   ├── Testing.vue       # Testing Suite ✅
-│   │   │   ├── Search.vue        # Search results ❌
-│   │   │   ├── Account.vue       # User account ❌
-│   │   │   └── Admin.vue         # Admin dashboard ❌
-│   │   ├── stores/               # Pinia stores
-│   │   │   ├── auth.js           # Authentication ❌
-│   │   │   ├── catalog.js        # Music catalog ❌
-│   │   │   ├── player.js         # Playback state ❌
-│   │   │   ├── library.js        # User library ❌
-│   │   │   └── search.js         # Search state ❌
-│   │   ├── services/             # API services
-│   │   │   ├── streaming.js      # Streaming service ✅
-│   │   │   ├── catalog.js        # Catalog API ❌
-│   │   │   ├── search.js         # Search service ❌
-│   │   │   └── analytics.js      # Usage tracking ❌
-│   │   ├── composables/          # Vue composables
-│   │   │   ├── useAuth.js        # Basic authentication ✅
-│   │   │   ├── useDualAuth.js    # Dual auth model ✅
-│   │   │   ├── useCatalog.js     # Catalog operations ✅
-│   │   │   ├── usePlayer.js      # Audio playback ✅
-│   │   │   └── useLibrary.js     # Library management ✅
-│   │   ├── router/               # Vue Router
-│   │   │   └── index.js          # Route definitions ✅
-│   │   ├── assets/               # Design system CSS architecture
-│   │   │   ├── main.css          # Entry point importing all stylesheets ✅
-│   │   │   ├── base.css          # CSS reset, normalization, base typography ✅
-│   │   │   ├── themes.css        # CSS custom properties, light/dark themes ✅
-│   │   │   └── components.css    # Reusable component & utility classes ✅
-│   │   ├── firebase.js           # Firebase initialization ✅
-│   │   ├── App.vue               # Root component ✅
-│   │   └── main.js               # Entry point ✅
+│   ├── dist/                     # Build output (git-ignored)
+│   ├── docs/                     # Documentation
+│   │   ├── api-reference.md      # API docs ❌
+│   │   ├── customization.md      # Theming guide ❌
+│   │   ├── DDEX.md               # Unified implementation standards ✅
+│   │   ├── getting-started.md    # Quick start guide ❌
+│   │   ├── ingestion-guide.md    # ERN ingestion ❌
+│   │   ├── streaming-setup.md    # Streaming config ❌
+│   │   └── dsr-reporting.md      # DSR guide ❌
 │   ├── functions/                # Cloud Functions
 │   │   ├── ingestion/            # ERN processing
 │   │   │   ├── receiver.js       # Receive deliveries ✅
@@ -287,36 +205,88 @@ stardust-dsp/
 │   │   └── package.json          # Dependencies ✅
 │   ├── public/                   # Static assets ✅
 │   │   └── index.html            # HTML template ✅
+│   ├── src/                      # Vue application
+│   │   ├── assets/               # Design system CSS architecture
+│   │   │   ├── main.css          # Entry point importing all stylesheets ✅
+│   │   │   ├── base.css          # CSS reset, normalization, base typography ✅
+│   │   │   ├── themes.css        # CSS custom properties, light/dark themes ✅
+│   │   │   └── components.css    # Reusable component & utility classes ✅
+│   │   ├── components/           # UI components
+│   │   │   ├── NavBar.vue        # Navigation component ✅
+│   │   │   ├── browse/           # Browse & discovery
+│   │   │   │   ├── AlbumGrid.vue # Album grid ❌
+│   │   │   │   ├── ArtistPage.vue # Artist page ❌
+│   │   │   │   ├── GenreExplorer.vue # Genre explorer ❌
+│   │   │   │   └── HomePage.vue  # Home page ❌
+│   │   │   ├── player/           # Music player
+│   │   │   │   ├── Controls.vue  # Player controls ❌
+│   │   │   │   ├── FullPlayer.vue # Full player view ✅
+│   │   │   │   ├── NowPlaying.vue # Now playing view ❌
+│   │   │   │   ├── ProgressBar.vue # Progress indicator ❌
+│   │   │   │   └── Queue.vue     # Queue management ❌
+│   │   │   ├── search/           # Search functionality
+│   │   │   │   ├── SearchBar.vue # Search input ❌
+│   │   │   │   ├── SearchResults.vue # Results display ❌
+│   │   │   │   └── Filters.vue   # Search filters ❌
+│   │   │   ├── library/          # User library
+│   │   │   │   ├── Playlists.vue # Playlist management ❌
+│   │   │   │   ├── Favorites.vue # Favorite tracks ❌
+│   │   │   │   └── History.vue   # Listening history ❌
+│   │   │   └── admin/            # Admin panel
+│   │   │       ├── Deliveries.vue # Delivery management ❌
+│   │   │       ├── Catalog.vue   # Catalog admin ❌
+│   │   │       └── Analytics.vue # Analytics dashboard ❌
+│   │   ├── composables/          # Vue composables
+│   │   │   ├── useAuth.js        # Basic authentication ✅
+│   │   │   ├── useCatalog.js     # Catalog operations ✅
+│   │   │   ├── useDualAuth.js    # Dual auth model ✅
+│   │   │   ├── useLibrary.js     # Library management ✅
+│   │   │   └── usePlayer.js      # Audio playback ✅
+│   │   ├── router/               # Vue Router
+│   │   │   └── index.js          # Route definitions ✅
+│   │   ├── services/             # API services
+│   │   │   ├── analytics.js      # Usage tracking ❌
+│   │   │   ├── catalog.js        # Catalog API ❌
+│   │   │   ├── search.js         # Search service ❌
+│   │   │   └── streaming.js      # Streaming service ✅
+│   │   ├── views/                # Page views
+│   │   │   ├── Account.vue       # User account ❌
+│   │   │   ├── Admin.vue         # Admin dashboard ❌
+│   │   │   ├── Artist.vue        # Artist profile ✅
+│   │   │   ├── Catalog.vue       # Browse catalog ✅
+│   │   │   ├── Dashboard.vue     # User dashboard ✅
+│   │   │   ├── Distributors.vue  # Distributor management ✅
+│   │   │   ├── Ingestion.vue     # Ingestion monitoring ✅
+│   │   │   ├── IngestionDetail.vue # Delivery details ✅
+│   │   │   ├── Library.vue       # User library ✅
+│   │   │   ├── Login.vue         # Login page ✅
+│   │   │   ├── ReleaseDetail.vue # Release/Album details ✅
+│   │   │   ├── Search.vue        # Search results ❌
+│   │   │   ├── Signup.vue        # Signup page ✅
+│   │   │   ├── SplashPage.vue    # Landing page ✅
+│   │   │   └── Testing.vue       # Testing Suite ✅
+│   │   ├── App.vue               # Root component ✅
+│   │   ├── firebase.js           # Firebase initialization ✅
+│   │   └── main.js               # Entry point ✅
 │   ├── workers/                  # Service workers
 │   │   └── offline.js            # Offline playback ❌
 │   ├── scripts/                  # Scripts
 │   │   ├── setup.js              # Initial setup ❌
 │   │   ├── configure.js          # Configuration ❌
 │   │   └── seed.js               # Demo data seeder ❌
+│   ├── .env                      # Environment variables (git-ignored) ✅
 │   ├── .env.example              # Environment template ✅
+│   ├── .gitignore                # Git ignore ✅
 │   ├── firebase.json             # Firebase config ✅
-│   ├── firestore.rules           # Security rules ✅
 │   ├── firestore.indexes.json    # Database indexes ✅
-│   ├── storage.rules             # Storage rules ❌
-│   ├── algolia.config.js         # Search config ❌
-│   ├── package.json              # Dependencies ✅
-│   └── vite.config.js            # Vite config ✅
-├── docs/                         # Documentation
-│   ├── DDEX.md                   # Unified implementation standards ✅
-│   ├── getting-started.md        # Quick start guide ❌
-│   ├── ingestion-guide.md        # ERN ingestion ❌
-│   ├── streaming-setup.md        # Streaming config ❌
-│   ├── customization.md          # Theming guide ❌
-│   ├── api-reference.md          # API docs ❌
-│   └── dsr-reporting.md          # DSR guide ❌
-├── examples/                     # Example configs
-│   ├── test-platform/            # Test environment ❌
-│   ├── indie-dsp/                # Indie platform ❌
-│   └── enterprise/               # Enterprise setup ❌
-├── tests/                        # Test suites ❌
-├── LICENSE                       # MIT License ❌
-├── README.md                     # Project README ❌
-└── blueprint.md                  # This document ✅
+│   ├── firestore.rules           # Firestore rules ✅
+│   ├── index.html                # HTML app entry ✅
+│   ├── package.json              # Project dependencies ✅
+│   ├── storage.rules             # Cloud storage rules ✅
+│   └── vite.config.js            # Vite configuration ✅
+├── blueprint.md                  # This document ✅
+├── LICENSE                       # MIT License ✅
+└── README.md                     # Project README ✅
 ```
 
 ### Files Created and Deployed:
