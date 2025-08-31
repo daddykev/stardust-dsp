@@ -106,8 +106,8 @@ const copyCode = () => {
               <span class="stat-label">Ingestion Time</span>
             </div>
             <div class="stat">
-              <span class="stat-value">100%</span>
-              <span class="stat-label">Firebase Uptime</span>
+              <span class="stat-value">99.95%</span>
+              <span class="stat-label">Google Uptime SLA</span>
             </div>
           </div>
 
