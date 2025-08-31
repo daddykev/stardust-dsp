@@ -1,3 +1,218 @@
+<script setup>
+import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { useCatalog } from '../composables/useCatalog'
+import { usePlayer } from '../composables/usePlayer'
+import { db } from '../firebase'
+import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore'
+
+const route = useRoute()
+const router = useRouter()
+const catalog = useCatalog()
+const player = usePlayer()
+
+// State
+const artist = ref(null)
+const similarArtists = ref([])
+const isLoading = ref(true)
+const error = ref(null)
+const isFollowing = ref(false)
+const discographyView = ref('grid')
+
+// Computed
+const artistId = computed(() => route.params.id)
+
+const totalTracks = computed(() => {
+  if (!artist.value?.releases) return 0
+  return artist.value.releases.reduce((total, release) => {
+    return total + (release.trackCount || 0)
+  }, 0)
+})
+
+const sortedReleases = computed(() => {
+  if (!artist.value?.releases) return []
+  return [...artist.value.releases].sort((a, b) => {
+    const dateA = a.releaseDate?.toDate ? a.releaseDate.toDate() : new Date(a.releaseDate || 0)
+    const dateB = b.releaseDate?.toDate ? b.releaseDate.toDate() : new Date(b.releaseDate || 0)
+    return dateB - dateA // Newest first
+  })
+})
+
+// Load artist data
+async function loadArtist() {
+  isLoading.value = true
+  error.value = null
+  
+  try {
+    // Use the catalog composable's getArtist method
+    artist.value = await catalog.getArtist(artistId.value)
+    
+    if (!artist.value) {
+      error.value = 'Artist not found'
+      return
+    }
+    
+    // Get track counts for releases if not already loaded
+    if (artist.value.releases) {
+      for (const release of artist.value.releases) {
+        if (!release.trackCount) {
+          const tracksSnapshot = await getDocs(
+            query(collection(db, 'tracks'), where('releaseId', '==', release.id))
+          )
+          release.trackCount = tracksSnapshot.size
+        }
+      }
+    }
+    
+    // Load similar artists (mock for now - would need recommendation engine)
+    await loadSimilarArtists()
+    
+  } catch (err) {
+    console.error('Error loading artist:', err)
+    error.value = err.message
+  } finally {
+    isLoading.value = false
+  }
+}
+
+// Load similar artists
+async function loadSimilarArtists() {
+  // This is a simple implementation - in production you'd use a recommendation engine
+  try {
+    const q = query(
+      collection(db, 'artists'),
+      where('name', '!=', artist.value.name),
+      limit(6)
+    )
+    
+    const snapshot = await getDocs(q)
+    similarArtists.value = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    })).slice(0, 5)
+    
+  } catch (err) {
+    console.error('Error loading similar artists:', err)
+  }
+}
+
+// Player functions
+async function playAllTracks() {
+  if (!artist.value?.releases) return
+  
+  // Clear queue
+  player.clearQueue()
+  
+  // Load and add all tracks from all releases
+  for (const release of artist.value.releases) {
+    const tracks = await catalog.fetchReleaseTracks(release.id)
+    tracks.forEach(track => {
+      track.albumTitle = release.title
+      track.artworkUrl = release.artworkUrl
+      player.addToQueue(track)
+    })
+  }
+  
+  // Start playing
+  if (player.queue.value.length > 0) {
+    player.playTrack(player.queue.value[0])
+  }
+}
+
+async function shufflePlay() {
+  await playAllTracks()
+  player.toggleShuffle()
+}
+
+function playTrack(track) {
+  player.playTrack(track)
+}
+
+async function playRelease(release) {
+  const tracks = await catalog.fetchReleaseTracks(release.id)
+  if (tracks.length > 0) {
+    player.clearQueue()
+    tracks.forEach(track => {
+      track.albumTitle = release.title
+      track.artworkUrl = release.artworkUrl
+      player.addToQueue(track)
+    })
+    player.playTrack(tracks[0])
+  }
+}
+
+function addToQueue(track) {
+  player.addToQueue(track)
+  console.log('Added to queue:', track.title)
+}
+
+function isCurrentTrack(track) {
+  return player.currentTrack.value?.id === track.id
+}
+
+function showTrackMenu(track) {
+  console.log('Show menu for:', track)
+}
+
+// Actions
+function followArtist() {
+  isFollowing.value = !isFollowing.value
+  console.log('Follow artist:', artist.value.name)
+}
+
+function shareArtist() {
+  const url = window.location.href
+  navigator.clipboard.writeText(url)
+  console.log('Link copied to clipboard')
+}
+
+// Navigation
+function goToRelease(id) {
+  router.push(`/releases/${id}`)
+}
+
+function goToArtist(id) {
+  router.push(`/artists/${id}`)
+}
+
+// Formatting
+function formatDuration(seconds) {
+  if (!seconds) return '0:00'
+  const mins = Math.floor(seconds / 60)
+  const secs = seconds % 60
+  return `${mins}:${secs.toString().padStart(2, '0')}`
+}
+
+function formatYear(date) {
+  if (!date) return ''
+  const d = date.toDate ? date.toDate() : new Date(date)
+  return d.getFullYear()
+}
+
+function formatNumber(num) {
+  if (!num) return '0'
+  return num.toLocaleString()
+}
+
+function handleImageError(e) {
+  e.target.src = e.target.classList.contains('artist-image') || 
+                  e.target.classList.contains('similar-artist-image')
+    ? '/placeholder-artist.png'
+    : '/placeholder-album.png'
+}
+
+// Watch for route changes
+watch(artistId, (newId) => {
+  if (newId) {
+    loadArtist()
+  }
+})
+
+onMounted(() => {
+  loadArtist()
+})
+</script>
+
 <template>
   <div class="artist-detail">
     <div class="container">
@@ -265,221 +480,6 @@
     </div>
   </div>
 </template>
-
-<script setup>
-import { ref, computed, onMounted, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { useCatalog } from '../composables/useCatalog'
-import { usePlayer } from '../composables/usePlayer'
-import { db } from '../firebase'
-import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore'
-
-const route = useRoute()
-const router = useRouter()
-const catalog = useCatalog()
-const player = usePlayer()
-
-// State
-const artist = ref(null)
-const similarArtists = ref([])
-const isLoading = ref(true)
-const error = ref(null)
-const isFollowing = ref(false)
-const discographyView = ref('grid')
-
-// Computed
-const artistId = computed(() => route.params.id)
-
-const totalTracks = computed(() => {
-  if (!artist.value?.releases) return 0
-  return artist.value.releases.reduce((total, release) => {
-    return total + (release.trackCount || 0)
-  }, 0)
-})
-
-const sortedReleases = computed(() => {
-  if (!artist.value?.releases) return []
-  return [...artist.value.releases].sort((a, b) => {
-    const dateA = a.releaseDate?.toDate ? a.releaseDate.toDate() : new Date(a.releaseDate || 0)
-    const dateB = b.releaseDate?.toDate ? b.releaseDate.toDate() : new Date(b.releaseDate || 0)
-    return dateB - dateA // Newest first
-  })
-})
-
-// Load artist data
-async function loadArtist() {
-  isLoading.value = true
-  error.value = null
-  
-  try {
-    // Use the catalog composable's getArtist method
-    artist.value = await catalog.getArtist(artistId.value)
-    
-    if (!artist.value) {
-      error.value = 'Artist not found'
-      return
-    }
-    
-    // Get track counts for releases if not already loaded
-    if (artist.value.releases) {
-      for (const release of artist.value.releases) {
-        if (!release.trackCount) {
-          const tracksSnapshot = await getDocs(
-            query(collection(db, 'tracks'), where('releaseId', '==', release.id))
-          )
-          release.trackCount = tracksSnapshot.size
-        }
-      }
-    }
-    
-    // Load similar artists (mock for now - would need recommendation engine)
-    await loadSimilarArtists()
-    
-  } catch (err) {
-    console.error('Error loading artist:', err)
-    error.value = err.message
-  } finally {
-    isLoading.value = false
-  }
-}
-
-// Load similar artists
-async function loadSimilarArtists() {
-  // This is a simple implementation - in production you'd use a recommendation engine
-  try {
-    const q = query(
-      collection(db, 'artists'),
-      where('name', '!=', artist.value.name),
-      limit(6)
-    )
-    
-    const snapshot = await getDocs(q)
-    similarArtists.value = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    })).slice(0, 5)
-    
-  } catch (err) {
-    console.error('Error loading similar artists:', err)
-  }
-}
-
-// Player functions
-async function playAllTracks() {
-  if (!artist.value?.releases) return
-  
-  // Clear queue
-  player.clearQueue()
-  
-  // Load and add all tracks from all releases
-  for (const release of artist.value.releases) {
-    const tracks = await catalog.fetchReleaseTracks(release.id)
-    tracks.forEach(track => {
-      track.albumTitle = release.title
-      track.artworkUrl = release.artworkUrl
-      player.addToQueue(track)
-    })
-  }
-  
-  // Start playing
-  if (player.queue.value.length > 0) {
-    player.playTrack(player.queue.value[0])
-  }
-}
-
-async function shufflePlay() {
-  await playAllTracks()
-  player.toggleShuffle()
-}
-
-function playTrack(track) {
-  player.playTrack(track)
-}
-
-async function playRelease(release) {
-  const tracks = await catalog.fetchReleaseTracks(release.id)
-  if (tracks.length > 0) {
-    player.clearQueue()
-    tracks.forEach(track => {
-      track.albumTitle = release.title
-      track.artworkUrl = release.artworkUrl
-      player.addToQueue(track)
-    })
-    player.playTrack(tracks[0])
-  }
-}
-
-function addToQueue(track) {
-  player.addToQueue(track)
-  console.log('Added to queue:', track.title)
-}
-
-function isCurrentTrack(track) {
-  return player.currentTrack.value?.id === track.id
-}
-
-function showTrackMenu(track) {
-  console.log('Show menu for:', track)
-}
-
-// Actions
-function followArtist() {
-  isFollowing.value = !isFollowing.value
-  console.log('Follow artist:', artist.value.name)
-}
-
-function shareArtist() {
-  const url = window.location.href
-  navigator.clipboard.writeText(url)
-  console.log('Link copied to clipboard')
-}
-
-// Navigation
-function goToRelease(id) {
-  router.push(`/releases/${id}`)
-}
-
-function goToArtist(id) {
-  router.push(`/artists/${id}`)
-}
-
-// Formatting
-function formatDuration(seconds) {
-  if (!seconds) return '0:00'
-  const mins = Math.floor(seconds / 60)
-  const secs = seconds % 60
-  return `${mins}:${secs.toString().padStart(2, '0')}`
-}
-
-function formatYear(date) {
-  if (!date) return ''
-  const d = date.toDate ? date.toDate() : new Date(date)
-  return d.getFullYear()
-}
-
-function formatNumber(num) {
-  if (!num) return '0'
-  return num.toLocaleString()
-}
-
-function handleImageError(e) {
-  e.target.src = e.target.classList.contains('artist-image') || 
-                  e.target.classList.contains('similar-artist-image')
-    ? '/placeholder-artist.png'
-    : '/placeholder-album.png'
-}
-
-// Watch for route changes
-watch(artistId, (newId) => {
-  if (newId) {
-    loadArtist()
-  }
-})
-
-onMounted(() => {
-  loadArtist()
-})
-</script>
 
 <style scoped>
 .artist-detail {

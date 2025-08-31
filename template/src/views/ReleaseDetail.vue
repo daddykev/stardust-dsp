@@ -1,217 +1,3 @@
-<template>
-  <div class="release-detail">
-    <div class="container">
-      <!-- Loading State -->
-      <div v-if="isLoading" class="loading-state">
-        <div class="spinner"></div>
-        <p>Loading release...</p>
-      </div>
-
-      <!-- Error State -->
-      <div v-else-if="error" class="error-state card">
-        <div class="card-body">
-          <font-awesome-icon icon="exclamation-circle" class="error-icon" />
-          <h3>Release Not Found</h3>
-          <p>{{ error }}</p>
-          <router-link to="/catalog" class="btn btn-primary">
-            Back to Catalog
-          </router-link>
-        </div>
-      </div>
-
-      <!-- Release Content -->
-      <div v-else-if="release">
-        <!-- Release Header -->
-        <div class="release-header">
-          <div class="release-artwork-container">
-            <img 
-              :src="release.artworkUrl || '/placeholder-album.png'" 
-              :alt="release.title"
-              class="release-artwork"
-              @error="handleImageError"
-            />
-            <div class="artwork-actions">
-              <button @click="playAll" class="btn btn-primary btn-lg">
-                <font-awesome-icon icon="play" />
-                Play All
-              </button>
-              <button @click="shufflePlay" class="btn btn-secondary">
-                <font-awesome-icon icon="random" />
-                Shuffle
-              </button>
-            </div>
-          </div>
-          
-          <div class="release-info">
-            <div class="release-type-badge">{{ release.releaseType || 'Album' }}</div>
-            <h1 class="release-title">{{ release.title }}</h1>
-            <div class="release-artist">
-              <router-link 
-                v-if="artistId" 
-                :to="`/artists/${artistId}`"
-                class="artist-link"
-              >
-                {{ release.artistName }}
-              </router-link>
-              <span v-else>{{ release.artistName }}</span>
-            </div>
-            
-            <div class="release-metadata">
-              <div class="metadata-item">
-                <font-awesome-icon icon="calendar" />
-                <span>{{ formatReleaseDate(release.releaseDate) }}</span>
-              </div>
-              <div class="metadata-item">
-                <font-awesome-icon icon="music" />
-                <span>{{ tracks.length }} tracks</span>
-              </div>
-              <div class="metadata-item">
-                <font-awesome-icon icon="clock" />
-                <span>{{ formatTotalDuration(totalDuration) }}</span>
-              </div>
-              <div class="metadata-item" v-if="release.labelName">
-                <font-awesome-icon icon="building" />
-                <span>{{ release.labelName }}</span>
-              </div>
-            </div>
-            
-            <div class="release-actions">
-              <button @click="toggleFavorite" class="action-btn" :class="{ active: isFavorite }">
-                <font-awesome-icon :icon="isFavorite ? 'heart' : ['far', 'heart']" />
-                {{ isFavorite ? 'Saved' : 'Save' }}
-              </button>
-              <button @click="addToPlaylist" class="action-btn">
-                <font-awesome-icon icon="plus" />
-                Add to Playlist
-              </button>
-              <button @click="shareRelease" class="action-btn">
-                <font-awesome-icon icon="share" />
-                Share
-              </button>
-            </div>
-
-            <!-- Ingestion Info -->
-            <div class="ingestion-info" v-if="release.sender">
-              <h3>Ingestion Details</h3>
-              <div class="ingestion-details">
-                <div class="detail-row">
-                  <span class="detail-label">Distributor:</span>
-                  <span>{{ release.senderName || release.sender }}</span>
-                </div>
-                <div class="detail-row">
-                  <span class="detail-label">Message ID:</span>
-                  <code>{{ release.messageId }}</code>
-                </div>
-                <div class="detail-row">
-                  <span class="detail-label">Ingested:</span>
-                  <span>{{ formatDate(release.ingestedAt || release.createdAt) }}</span>
-                </div>
-                <div class="detail-row" v-if="release.ern">
-                  <span class="detail-label">ERN Version:</span>
-                  <span>{{ release.ern.version }}</span>
-                </div>
-                <div class="detail-row" v-if="release.upc">
-                  <span class="detail-label">UPC:</span>
-                  <code>{{ release.upc }}</code>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Track List -->
-        <div class="track-list-section">
-          <h2>Track List</h2>
-          <div class="track-list">
-            <div 
-              v-for="(track, index) in tracks" 
-              :key="track.id"
-              class="track-item"
-              :class="{ playing: isCurrentTrack(track) }"
-              @click="playTrack(track, index)"
-            >
-              <div class="track-number">
-                <span v-if="!isCurrentTrack(track)">{{ track.trackNumber || index + 1 }}</span>
-                <font-awesome-icon 
-                  v-else 
-                  :icon="player.isPlaying.value ? 'pause' : 'play'" 
-                  class="playing-icon"
-                />
-              </div>
-              
-              <div class="track-info">
-                <div class="track-title">{{ track.title }}</div>
-                <div class="track-artist" v-if="track.artistName !== release.artistName">
-                  {{ track.artistName }}
-                </div>
-              </div>
-              
-              <div class="track-isrc">
-                <code>{{ track.isrc }}</code>
-              </div>
-              
-              <div class="track-duration">
-                {{ formatDuration(track.duration) }}
-              </div>
-              
-              <div class="track-actions">
-                <button @click.stop="addTrackToQueue(track)" class="btn-icon" title="Add to Queue">
-                  <font-awesome-icon icon="plus" />
-                </button>
-                <button @click.stop="showTrackMenu(track)" class="btn-icon" title="More">
-                  <font-awesome-icon icon="ellipsis-v" />
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Copyright & Credits -->
-        <div class="release-credits" v-if="release.copyright || release.credits">
-          <h3>Credits & Copyright</h3>
-          <div class="credits-content">
-            <div v-if="release.copyright" class="copyright-info">
-              <p v-for="(copyright, idx) in release.copyright" :key="idx">
-                {{ copyright.type }} {{ copyright.text }} {{ copyright.year }}
-              </p>
-            </div>
-            <div v-if="release.credits" class="credits-list">
-              <div v-for="(credit, idx) in release.credits" :key="idx" class="credit-item">
-                <span class="credit-role">{{ credit.role }}:</span>
-                <span class="credit-name">{{ credit.name }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Related Releases -->
-        <div class="related-releases" v-if="relatedReleases.length > 0">
-          <h3>More from {{ release.artistName }}</h3>
-          <div class="releases-grid">
-            <div 
-              v-for="related in relatedReleases" 
-              :key="related.id"
-              class="related-release-card"
-              @click="goToRelease(related.id)"
-            >
-              <img 
-                :src="related.artworkUrl || '/placeholder-album.png'" 
-                :alt="related.title"
-                class="related-artwork"
-                @error="handleImageError"
-              />
-              <div class="related-info">
-                <h4>{{ related.title }}</h4>
-                <p>{{ formatYear(related.releaseDate) }}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</template>
-
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -557,6 +343,220 @@ onMounted(() => {
   loadRelease()
 })
 </script>
+
+<template>
+  <div class="release-detail">
+    <div class="container">
+      <!-- Loading State -->
+      <div v-if="isLoading" class="loading-state">
+        <div class="spinner"></div>
+        <p>Loading release...</p>
+      </div>
+
+      <!-- Error State -->
+      <div v-else-if="error" class="error-state card">
+        <div class="card-body">
+          <font-awesome-icon icon="exclamation-circle" class="error-icon" />
+          <h3>Release Not Found</h3>
+          <p>{{ error }}</p>
+          <router-link to="/catalog" class="btn btn-primary">
+            Back to Catalog
+          </router-link>
+        </div>
+      </div>
+
+      <!-- Release Content -->
+      <div v-else-if="release">
+        <!-- Release Header -->
+        <div class="release-header">
+          <div class="release-artwork-container">
+            <img 
+              :src="release.artworkUrl || '/placeholder-album.png'" 
+              :alt="release.title"
+              class="release-artwork"
+              @error="handleImageError"
+            />
+            <div class="artwork-actions">
+              <button @click="playAll" class="btn btn-primary btn-lg">
+                <font-awesome-icon icon="play" />
+                Play All
+              </button>
+              <button @click="shufflePlay" class="btn btn-secondary">
+                <font-awesome-icon icon="random" />
+                Shuffle
+              </button>
+            </div>
+          </div>
+          
+          <div class="release-info">
+            <div class="release-type-badge">{{ release.releaseType || 'Album' }}</div>
+            <h1 class="release-title">{{ release.title }}</h1>
+            <div class="release-artist">
+              <router-link 
+                v-if="artistId" 
+                :to="`/artists/${artistId}`"
+                class="artist-link"
+              >
+                {{ release.artistName }}
+              </router-link>
+              <span v-else>{{ release.artistName }}</span>
+            </div>
+            
+            <div class="release-metadata">
+              <div class="metadata-item">
+                <font-awesome-icon icon="calendar" />
+                <span>{{ formatReleaseDate(release.releaseDate) }}</span>
+              </div>
+              <div class="metadata-item">
+                <font-awesome-icon icon="music" />
+                <span>{{ tracks.length }} tracks</span>
+              </div>
+              <div class="metadata-item">
+                <font-awesome-icon icon="clock" />
+                <span>{{ formatTotalDuration(totalDuration) }}</span>
+              </div>
+              <div class="metadata-item" v-if="release.labelName">
+                <font-awesome-icon icon="building" />
+                <span>{{ release.labelName }}</span>
+              </div>
+            </div>
+            
+            <div class="release-actions">
+              <button @click="toggleFavorite" class="action-btn" :class="{ active: isFavorite }">
+                <font-awesome-icon :icon="isFavorite ? 'heart' : ['far', 'heart']" />
+                {{ isFavorite ? 'Saved' : 'Save' }}
+              </button>
+              <button @click="addToPlaylist" class="action-btn">
+                <font-awesome-icon icon="plus" />
+                Add to Playlist
+              </button>
+              <button @click="shareRelease" class="action-btn">
+                <font-awesome-icon icon="share" />
+                Share
+              </button>
+            </div>
+
+            <!-- Ingestion Info -->
+            <div class="ingestion-info" v-if="release.sender">
+              <h3>Ingestion Details</h3>
+              <div class="ingestion-details">
+                <div class="detail-row">
+                  <span class="detail-label">Distributor:</span>
+                  <span>{{ release.senderName || release.sender }}</span>
+                </div>
+                <div class="detail-row">
+                  <span class="detail-label">Message ID:</span>
+                  <code>{{ release.messageId }}</code>
+                </div>
+                <div class="detail-row">
+                  <span class="detail-label">Ingested:</span>
+                  <span>{{ formatDate(release.ingestedAt || release.createdAt) }}</span>
+                </div>
+                <div class="detail-row" v-if="release.ern">
+                  <span class="detail-label">ERN Version:</span>
+                  <span>{{ release.ern.version }}</span>
+                </div>
+                <div class="detail-row" v-if="release.upc">
+                  <span class="detail-label">UPC:</span>
+                  <code>{{ release.upc }}</code>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Track List -->
+        <div class="track-list-section">
+          <h2>Track List</h2>
+          <div class="track-list">
+            <div 
+              v-for="(track, index) in tracks" 
+              :key="track.id"
+              class="track-item"
+              :class="{ playing: isCurrentTrack(track) }"
+              @click="playTrack(track, index)"
+            >
+              <div class="track-number">
+                <span v-if="!isCurrentTrack(track)">{{ track.trackNumber || index + 1 }}</span>
+                <font-awesome-icon 
+                  v-else 
+                  :icon="player.isPlaying.value ? 'pause' : 'play'" 
+                  class="playing-icon"
+                />
+              </div>
+              
+              <div class="track-info">
+                <div class="track-title">{{ track.title }}</div>
+                <div class="track-artist" v-if="track.artistName !== release.artistName">
+                  {{ track.artistName }}
+                </div>
+              </div>
+              
+              <div class="track-isrc">
+                <code>{{ track.isrc }}</code>
+              </div>
+              
+              <div class="track-duration">
+                {{ formatDuration(track.duration) }}
+              </div>
+              
+              <div class="track-actions">
+                <button @click.stop="addTrackToQueue(track)" class="btn-icon" title="Add to Queue">
+                  <font-awesome-icon icon="plus" />
+                </button>
+                <button @click.stop="showTrackMenu(track)" class="btn-icon" title="More">
+                  <font-awesome-icon icon="ellipsis-v" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Copyright & Credits -->
+        <div class="release-credits" v-if="release.copyright || release.credits">
+          <h3>Credits & Copyright</h3>
+          <div class="credits-content">
+            <div v-if="release.copyright" class="copyright-info">
+              <p v-for="(copyright, idx) in release.copyright" :key="idx">
+                {{ copyright.type }} {{ copyright.text }} {{ copyright.year }}
+              </p>
+            </div>
+            <div v-if="release.credits" class="credits-list">
+              <div v-for="(credit, idx) in release.credits" :key="idx" class="credit-item">
+                <span class="credit-role">{{ credit.role }}:</span>
+                <span class="credit-name">{{ credit.name }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Related Releases -->
+        <div class="related-releases" v-if="relatedReleases.length > 0">
+          <h3>More from {{ release.artistName }}</h3>
+          <div class="releases-grid">
+            <div 
+              v-for="related in relatedReleases" 
+              :key="related.id"
+              class="related-release-card"
+              @click="goToRelease(related.id)"
+            >
+              <img 
+                :src="related.artworkUrl || '/placeholder-album.png'" 
+                :alt="related.title"
+                class="related-artwork"
+                @error="handleImageError"
+              />
+              <div class="related-info">
+                <h4>{{ related.title }}</h4>
+                <p>{{ formatYear(related.releaseDate) }}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
 
 <style scoped>
 .release-detail {

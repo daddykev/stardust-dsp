@@ -1,286 +1,3 @@
-<template>
-  <div class="dashboard">
-    <div class="container">
-      <!-- Welcome Header -->
-      <div class="dashboard-header">
-        <div>
-          <h1 class="dashboard-title">{{ greeting }}, {{ displayName }}!</h1>
-          <p class="dashboard-subtitle">Your streaming platform overview</p>
-        </div>
-        <div class="header-actions">
-          <button @click="refreshData" class="btn btn-secondary">
-            <font-awesome-icon icon="sync" :spin="isRefreshing" />
-            Refresh
-          </button>
-          <router-link to="/ingestion" class="btn btn-primary">
-            <font-awesome-icon icon="inbox" />
-            Ingestion Pipeline
-          </router-link>
-        </div>
-      </div>
-
-      <!-- Loading State -->
-      <div v-if="isLoading" class="loading-container">
-        <div class="loading-spinner"></div>
-        <p>Loading platform data...</p>
-      </div>
-
-      <!-- Dashboard Content -->
-      <template v-else>
-        <!-- Stats Grid -->
-        <div class="stats-grid">
-          <div class="stat-card card">
-            <div class="card-body">
-              <div class="stat-icon">
-                <font-awesome-icon icon="compact-disc" />
-              </div>
-              <div class="stat-content">
-                <h3 class="stat-value">{{ formatNumber(stats.totalReleases) }}</h3>
-                <p class="stat-label">Total Releases</p>
-                <span class="stat-change" :class="stats.releasesChange >= 0 ? 'positive' : 'negative'">
-                  <font-awesome-icon :icon="stats.releasesChange >= 0 ? 'arrow-up' : 'arrow-down'" />
-                  {{ Math.abs(stats.releasesChange) }} this week
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div class="stat-card card">
-            <div class="card-body">
-              <div class="stat-icon info">
-                <font-awesome-icon icon="music" />
-              </div>
-              <div class="stat-content">
-                <h3 class="stat-value">{{ formatNumber(stats.totalTracks) }}</h3>
-                <p class="stat-label">Total Tracks</p>
-                <span class="stat-change" :class="stats.tracksChange >= 0 ? 'positive' : 'negative'">
-                  <font-awesome-icon :icon="stats.tracksChange >= 0 ? 'arrow-up' : 'arrow-down'" />
-                  {{ Math.abs(stats.tracksChange) }} this week
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div class="stat-card card">
-            <div class="card-body">
-              <div class="stat-icon success">
-                <font-awesome-icon icon="truck" />
-              </div>
-              <div class="stat-content">
-                <h3 class="stat-value">{{ formatNumber(stats.totalDeliveries) }}</h3>
-                <p class="stat-label">Total Deliveries</p>
-                <span class="stat-change">
-                  {{ stats.successRate }}% success rate
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div class="stat-card card">
-            <div class="card-body">
-              <div class="stat-icon warning">
-                <font-awesome-icon icon="building" />
-              </div>
-              <div class="stat-content">
-                <h3 class="stat-value">{{ stats.activeDistributors }}</h3>
-                <p class="stat-label">Active Distributors</p>
-                <span class="stat-change">
-                  {{ stats.pendingDeliveries }} pending
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Main Content Grid -->
-        <div class="content-grid">
-          <!-- Recent Ingestion Activity -->
-          <div class="activity-section">
-            <div class="card">
-              <div class="card-header">
-                <h2 class="section-title">Recent Ingestion Activity</h2>
-                <router-link to="/ingestion" class="view-all-link">View all</router-link>
-              </div>
-              <div class="card-body">
-                <div v-if="recentActivity.length === 0" class="empty-state">
-                  <font-awesome-icon icon="inbox" class="empty-icon" />
-                  <p>No recent deliveries</p>
-                  <router-link to="/distributors" class="btn btn-primary btn-sm">
-                    Configure Distributors
-                  </router-link>
-                </div>
-                <div v-else class="activity-list">
-                  <div v-for="activity in recentActivity" :key="activity.id" class="activity-item">
-                    <div class="activity-icon" :class="getStatusClass(activity.status)">
-                      <font-awesome-icon :icon="getActivityIcon(activity.status)" />
-                    </div>
-                    <div class="activity-content">
-                      <h4 class="activity-title">{{ activity.title }}</h4>
-                      <p class="activity-description">{{ activity.description }}</p>
-                      <span class="activity-time">{{ formatTime(activity.timestamp) }}</span>
-                    </div>
-                    <router-link 
-                      v-if="activity.deliveryId" 
-                      :to="`/ingestion/${activity.deliveryId}`"
-                      class="activity-link"
-                    >
-                      <font-awesome-icon icon="arrow-right" />
-                    </router-link>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Recent Releases -->
-            <div class="card mt-lg">
-              <div class="card-header">
-                <h2 class="section-title">Latest Releases</h2>
-                <router-link to="/catalog" class="view-all-link">Browse catalog</router-link>
-              </div>
-              <div class="card-body">
-                <div v-if="recentReleases.length === 0" class="empty-state">
-                  <p>No releases yet</p>
-                </div>
-                <div v-else class="releases-list">
-                  <div v-for="release in recentReleases" :key="release.id" class="release-item">
-                    <img 
-                      :src="release.artworkUrl || '/placeholder-album.png'" 
-                      :alt="release.title"
-                      class="release-thumb"
-                      @error="handleImageError"
-                    />
-                    <div class="release-info">
-                      <h4 class="release-title">{{ release.title }}</h4>
-                      <p class="release-artist">{{ release.artistName }}</p>
-                      <span class="release-date">{{ formatDate(release.releaseDate) }}</span>
-                    </div>
-                    <div class="release-meta">
-                      <span class="track-count">{{ release.trackCount || 0 }} tracks</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Side Panel -->
-          <div class="side-panel">
-            <!-- Quick Actions -->
-            <div class="card">
-              <div class="card-header">
-                <h2 class="section-title">Quick Actions</h2>
-              </div>
-              <div class="card-body">
-                <div class="action-grid">
-                  <router-link to="/catalog" class="action-button">
-                    <font-awesome-icon icon="compact-disc" class="action-icon" />
-                    <span>Browse Catalog</span>
-                  </router-link>
-                  <router-link to="/ingestion" class="action-button">
-                    <font-awesome-icon icon="inbox" class="action-icon" />
-                    <span>Ingestion</span>
-                  </router-link>
-                  <router-link to="/distributors" class="action-button">
-                    <font-awesome-icon icon="building" class="action-icon" />
-                    <span>Distributors</span>
-                  </router-link>
-                  <button @click="testDelivery" class="action-button">
-                    <font-awesome-icon icon="flask" class="action-icon" />
-                    <span>Test Delivery</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <!-- Pipeline Status -->
-            <div class="card">
-              <div class="card-header">
-                <h2 class="section-title">Pipeline Status</h2>
-              </div>
-              <div class="card-body">
-                <div class="status-list">
-                  <div class="status-item">
-                    <div class="status-indicator" :class="pipelineStatus.ingestion"></div>
-                    <span class="status-label">Ingestion Pipeline</span>
-                    <span class="status-value">{{ getPipelineStatusText('ingestion') }}</span>
-                  </div>
-                  <div class="status-item">
-                    <div class="status-indicator" :class="pipelineStatus.validation"></div>
-                    <span class="status-label">DDEX Validation</span>
-                    <span class="status-value">{{ getPipelineStatusText('validation') }}</span>
-                  </div>
-                  <div class="status-item">
-                    <div class="status-indicator" :class="pipelineStatus.storage"></div>
-                    <span class="status-label">Cloud Storage</span>
-                    <span class="status-value">{{ getPipelineStatusText('storage') }}</span>
-                  </div>
-                  <div class="status-item">
-                    <div class="status-indicator" :class="pipelineStatus.catalog"></div>
-                    <span class="status-label">Catalog Index</span>
-                    <span class="status-value">{{ getPipelineStatusText('catalog') }}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Top Distributors -->
-            <div class="card">
-              <div class="card-header">
-                <h2 class="section-title">Top Distributors</h2>
-              </div>
-              <div class="card-body">
-                <div v-if="topDistributors.length === 0" class="empty-state">
-                  <p>No distributor activity yet</p>
-                </div>
-                <div v-else class="distributor-list">
-                  <div v-for="dist in topDistributors" :key="dist.id" class="distributor-item">
-                    <div class="distributor-info">
-                      <h4>{{ dist.name }}</h4>
-                      <p>{{ dist.deliveryCount }} deliveries</p>
-                    </div>
-                    <div class="distributor-stats">
-                      <span class="success-rate" :class="dist.successRate >= 90 ? 'high' : 'medium'">
-                        {{ dist.successRate }}%
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- System Health -->
-            <div class="card">
-              <div class="card-header">
-                <h2 class="section-title">System Health</h2>
-              </div>
-              <div class="card-body">
-                <div class="health-metrics">
-                  <div class="metric">
-                    <span class="metric-label">Uptime</span>
-                    <span class="metric-value">{{ systemHealth.uptime }}</span>
-                  </div>
-                  <div class="metric">
-                    <span class="metric-label">Response Time</span>
-                    <span class="metric-value">{{ systemHealth.responseTime }}ms</span>
-                  </div>
-                  <div class="metric">
-                    <span class="metric-label">Storage Used</span>
-                    <span class="metric-value">{{ systemHealth.storageUsed }}</span>
-                  </div>
-                  <div class="metric">
-                    <span class="metric-label">Last Backup</span>
-                    <span class="metric-value">{{ systemHealth.lastBackup }}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </template>
-    </div>
-  </div>
-</template>
-
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
@@ -678,6 +395,289 @@ onUnmounted(() => {
   if (activityUnsubscribe) activityUnsubscribe()
 })
 </script>
+
+<template>
+  <div class="dashboard">
+    <div class="container">
+      <!-- Welcome Header -->
+      <div class="dashboard-header">
+        <div>
+          <h1 class="dashboard-title">{{ greeting }}, {{ displayName }}!</h1>
+          <p class="dashboard-subtitle">Your streaming platform overview</p>
+        </div>
+        <div class="header-actions">
+          <button @click="refreshData" class="btn btn-secondary">
+            <font-awesome-icon icon="sync" :spin="isRefreshing" />
+            Refresh
+          </button>
+          <router-link to="/ingestion" class="btn btn-primary">
+            <font-awesome-icon icon="inbox" />
+            Ingestion Pipeline
+          </router-link>
+        </div>
+      </div>
+
+      <!-- Loading State -->
+      <div v-if="isLoading" class="loading-container">
+        <div class="loading-spinner"></div>
+        <p>Loading platform data...</p>
+      </div>
+
+      <!-- Dashboard Content -->
+      <template v-else>
+        <!-- Stats Grid -->
+        <div class="stats-grid">
+          <div class="stat-card card">
+            <div class="card-body">
+              <div class="stat-icon">
+                <font-awesome-icon icon="compact-disc" />
+              </div>
+              <div class="stat-content">
+                <h3 class="stat-value">{{ formatNumber(stats.totalReleases) }}</h3>
+                <p class="stat-label">Total Releases</p>
+                <span class="stat-change" :class="stats.releasesChange >= 0 ? 'positive' : 'negative'">
+                  <font-awesome-icon :icon="stats.releasesChange >= 0 ? 'arrow-up' : 'arrow-down'" />
+                  {{ Math.abs(stats.releasesChange) }} this week
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div class="stat-card card">
+            <div class="card-body">
+              <div class="stat-icon info">
+                <font-awesome-icon icon="music" />
+              </div>
+              <div class="stat-content">
+                <h3 class="stat-value">{{ formatNumber(stats.totalTracks) }}</h3>
+                <p class="stat-label">Total Tracks</p>
+                <span class="stat-change" :class="stats.tracksChange >= 0 ? 'positive' : 'negative'">
+                  <font-awesome-icon :icon="stats.tracksChange >= 0 ? 'arrow-up' : 'arrow-down'" />
+                  {{ Math.abs(stats.tracksChange) }} this week
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div class="stat-card card">
+            <div class="card-body">
+              <div class="stat-icon success">
+                <font-awesome-icon icon="truck" />
+              </div>
+              <div class="stat-content">
+                <h3 class="stat-value">{{ formatNumber(stats.totalDeliveries) }}</h3>
+                <p class="stat-label">Total Deliveries</p>
+                <span class="stat-change">
+                  {{ stats.successRate }}% success rate
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div class="stat-card card">
+            <div class="card-body">
+              <div class="stat-icon warning">
+                <font-awesome-icon icon="building" />
+              </div>
+              <div class="stat-content">
+                <h3 class="stat-value">{{ stats.activeDistributors }}</h3>
+                <p class="stat-label">Active Distributors</p>
+                <span class="stat-change">
+                  {{ stats.pendingDeliveries }} pending
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Main Content Grid -->
+        <div class="content-grid">
+          <!-- Recent Ingestion Activity -->
+          <div class="activity-section">
+            <div class="card">
+              <div class="card-header">
+                <h2 class="section-title">Recent Ingestion Activity</h2>
+                <router-link to="/ingestion" class="view-all-link">View all</router-link>
+              </div>
+              <div class="card-body">
+                <div v-if="recentActivity.length === 0" class="empty-state">
+                  <font-awesome-icon icon="inbox" class="empty-icon" />
+                  <p>No recent deliveries</p>
+                  <router-link to="/distributors" class="btn btn-primary btn-sm">
+                    Configure Distributors
+                  </router-link>
+                </div>
+                <div v-else class="activity-list">
+                  <div v-for="activity in recentActivity" :key="activity.id" class="activity-item">
+                    <div class="activity-icon" :class="getStatusClass(activity.status)">
+                      <font-awesome-icon :icon="getActivityIcon(activity.status)" />
+                    </div>
+                    <div class="activity-content">
+                      <h4 class="activity-title">{{ activity.title }}</h4>
+                      <p class="activity-description">{{ activity.description }}</p>
+                      <span class="activity-time">{{ formatTime(activity.timestamp) }}</span>
+                    </div>
+                    <router-link 
+                      v-if="activity.deliveryId" 
+                      :to="`/ingestion/${activity.deliveryId}`"
+                      class="activity-link"
+                    >
+                      <font-awesome-icon icon="arrow-right" />
+                    </router-link>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Recent Releases -->
+            <div class="card mt-lg">
+              <div class="card-header">
+                <h2 class="section-title">Latest Releases</h2>
+                <router-link to="/catalog" class="view-all-link">Browse catalog</router-link>
+              </div>
+              <div class="card-body">
+                <div v-if="recentReleases.length === 0" class="empty-state">
+                  <p>No releases yet</p>
+                </div>
+                <div v-else class="releases-list">
+                  <div v-for="release in recentReleases" :key="release.id" class="release-item">
+                    <img 
+                      :src="release.artworkUrl || '/placeholder-album.png'" 
+                      :alt="release.title"
+                      class="release-thumb"
+                      @error="handleImageError"
+                    />
+                    <div class="release-info">
+                      <h4 class="release-title">{{ release.title }}</h4>
+                      <p class="release-artist">{{ release.artistName }}</p>
+                      <span class="release-date">{{ formatDate(release.releaseDate) }}</span>
+                    </div>
+                    <div class="release-meta">
+                      <span class="track-count">{{ release.trackCount || 0 }} tracks</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Side Panel -->
+          <div class="side-panel">
+            <!-- Quick Actions -->
+            <div class="card">
+              <div class="card-header">
+                <h2 class="section-title">Quick Actions</h2>
+              </div>
+              <div class="card-body">
+                <div class="action-grid">
+                  <router-link to="/catalog" class="action-button">
+                    <font-awesome-icon icon="compact-disc" class="action-icon" />
+                    <span>Browse Catalog</span>
+                  </router-link>
+                  <router-link to="/ingestion" class="action-button">
+                    <font-awesome-icon icon="inbox" class="action-icon" />
+                    <span>Ingestion</span>
+                  </router-link>
+                  <router-link to="/distributors" class="action-button">
+                    <font-awesome-icon icon="building" class="action-icon" />
+                    <span>Distributors</span>
+                  </router-link>
+                  <button @click="testDelivery" class="action-button">
+                    <font-awesome-icon icon="flask" class="action-icon" />
+                    <span>Test Delivery</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Pipeline Status -->
+            <div class="card">
+              <div class="card-header">
+                <h2 class="section-title">Pipeline Status</h2>
+              </div>
+              <div class="card-body">
+                <div class="status-list">
+                  <div class="status-item">
+                    <div class="status-indicator" :class="pipelineStatus.ingestion"></div>
+                    <span class="status-label">Ingestion Pipeline</span>
+                    <span class="status-value">{{ getPipelineStatusText('ingestion') }}</span>
+                  </div>
+                  <div class="status-item">
+                    <div class="status-indicator" :class="pipelineStatus.validation"></div>
+                    <span class="status-label">DDEX Validation</span>
+                    <span class="status-value">{{ getPipelineStatusText('validation') }}</span>
+                  </div>
+                  <div class="status-item">
+                    <div class="status-indicator" :class="pipelineStatus.storage"></div>
+                    <span class="status-label">Cloud Storage</span>
+                    <span class="status-value">{{ getPipelineStatusText('storage') }}</span>
+                  </div>
+                  <div class="status-item">
+                    <div class="status-indicator" :class="pipelineStatus.catalog"></div>
+                    <span class="status-label">Catalog Index</span>
+                    <span class="status-value">{{ getPipelineStatusText('catalog') }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Top Distributors -->
+            <div class="card">
+              <div class="card-header">
+                <h2 class="section-title">Top Distributors</h2>
+              </div>
+              <div class="card-body">
+                <div v-if="topDistributors.length === 0" class="empty-state">
+                  <p>No distributor activity yet</p>
+                </div>
+                <div v-else class="distributor-list">
+                  <div v-for="dist in topDistributors" :key="dist.id" class="distributor-item">
+                    <div class="distributor-info">
+                      <h4>{{ dist.name }}</h4>
+                      <p>{{ dist.deliveryCount }} deliveries</p>
+                    </div>
+                    <div class="distributor-stats">
+                      <span class="success-rate" :class="dist.successRate >= 90 ? 'high' : 'medium'">
+                        {{ dist.successRate }}%
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- System Health -->
+            <div class="card">
+              <div class="card-header">
+                <h2 class="section-title">System Health</h2>
+              </div>
+              <div class="card-body">
+                <div class="health-metrics">
+                  <div class="metric">
+                    <span class="metric-label">Uptime</span>
+                    <span class="metric-value">{{ systemHealth.uptime }}</span>
+                  </div>
+                  <div class="metric">
+                    <span class="metric-label">Response Time</span>
+                    <span class="metric-value">{{ systemHealth.responseTime }}ms</span>
+                  </div>
+                  <div class="metric">
+                    <span class="metric-label">Storage Used</span>
+                    <span class="metric-value">{{ systemHealth.storageUsed }}</span>
+                  </div>
+                  <div class="metric">
+                    <span class="metric-label">Last Backup</span>
+                    <span class="metric-value">{{ systemHealth.lastBackup }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div>
+</template>
 
 <style scoped>
 .dashboard {

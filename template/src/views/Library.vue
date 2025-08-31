@@ -1,3 +1,272 @@
+<script setup>
+import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { useLibrary } from '../composables/useLibrary'
+import { useCatalog } from '../composables/useCatalog'
+import { usePlayer } from '../composables/usePlayer'
+
+const router = useRouter()
+const library = useLibrary()
+const catalog = useCatalog()
+const player = usePlayer()
+
+// State
+const activeTab = ref('playlists')
+const showCreatePlaylist = ref(false)
+const showAddToPlaylistModal = ref(false)
+const editingPlaylist = ref(null)
+const selectedTrackForPlaylist = ref(null)
+const favoriteTracks = ref([])
+const favoriteAlbums = ref([])
+const favoriteArtists = ref([])
+
+const playlistForm = ref({
+  title: '',
+  description: '',
+  public: false,
+  collaborative: false
+})
+
+// Tabs configuration
+const tabs = computed(() => [
+  { 
+    id: 'playlists', 
+    label: 'Playlists', 
+    icon: 'list',
+    count: library.playlists.value.length 
+  },
+  { 
+    id: 'tracks', 
+    label: 'Songs', 
+    icon: 'music',
+    count: library.favoriteTracks.value.length 
+  },
+  { 
+    id: 'albums', 
+    label: 'Albums', 
+    icon: 'compact-disc',
+    count: library.favoriteAlbums.value.length 
+  },
+  { 
+    id: 'artists', 
+    label: 'Artists', 
+    icon: 'user',
+    count: library.favoriteArtists.value.length 
+  },
+  { 
+    id: 'history', 
+    label: 'Recent', 
+    icon: 'clock',
+    count: library.recentlyPlayed.value.length 
+  }
+])
+
+// Load favorite items with details
+async function loadFavoriteDetails() {
+  favoriteTracks.value = await library.getFavoriteItems('tracks')
+  favoriteAlbums.value = await library.getFavoriteItems('albums')
+  favoriteArtists.value = await library.getFavoriteItems('artists')
+}
+
+// Playlist management
+function createNewPlaylistForTrack() {
+  showAddToPlaylistModal.value = false
+  showCreatePlaylist.value = true
+}
+
+async function savePlaylist() {
+  try {
+    if (editingPlaylist.value) {
+      await library.updatePlaylist(editingPlaylist.value.id, playlistForm.value)
+    } else {
+      const newPlaylist = await library.createPlaylist(playlistForm.value)
+      
+      // If we were adding a track, add it to the new playlist
+      if (selectedTrackForPlaylist.value) {
+        await library.addToPlaylist(newPlaylist.id, selectedTrackForPlaylist.value)
+      }
+    }
+    
+    closePlaylistModal()
+  } catch (error) {
+    console.error('Error saving playlist:', error)
+    alert(error.message)
+  }
+}
+
+function editPlaylist(playlist) {
+  editingPlaylist.value = playlist
+  playlistForm.value = {
+    title: playlist.title,
+    description: playlist.description || '',
+    public: playlist.public || false,
+    collaborative: playlist.collaborative || false
+  }
+}
+
+async function deletePlaylist(playlist) {
+  if (confirm(`Delete "${playlist.title}"?`)) {
+    try {
+      await library.deletePlaylist(playlist.id)
+    } catch (error) {
+      console.error('Error deleting playlist:', error)
+      alert('Failed to delete playlist')
+    }
+  }
+}
+
+function closePlaylistModal() {
+  showCreatePlaylist.value = false
+  editingPlaylist.value = null
+  selectedTrackForPlaylist.value = null
+  playlistForm.value = {
+    title: '',
+    description: '',
+    public: false,
+    collaborative: false
+  }
+}
+
+// Add to playlist
+function showAddToPlaylist(track) {
+  selectedTrackForPlaylist.value = track
+  showAddToPlaylistModal.value = true
+}
+
+async function addTrackToPlaylist(playlistId) {
+  try {
+    await library.addToPlaylist(playlistId, selectedTrackForPlaylist.value)
+    closeAddToPlaylistModal()
+    // TODO: Show success toast
+  } catch (error) {
+    console.error('Error adding to playlist:', error)
+    alert(error.message)
+  }
+}
+
+function closeAddToPlaylistModal() {
+  showAddToPlaylistModal.value = false
+  selectedTrackForPlaylist.value = null
+}
+
+// Remove from favorites
+async function removeFromFavorites(item, type) {
+  try {
+    await library.toggleFavorite(item, type)
+    await loadFavoriteDetails() // Reload to update UI
+  } catch (error) {
+    console.error('Error removing from favorites:', error)
+  }
+}
+
+// Playback
+function playTrack(track) {
+  player.playTrack(track)
+}
+
+function playAllTracks() {
+  if (favoriteTracks.value.length === 0) return
+  
+  player.clearQueue()
+  favoriteTracks.value.forEach(track => player.addToQueue(track))
+  player.playTrack(favoriteTracks.value[0])
+}
+
+async function playPlaylist(playlist) {
+  if (!playlist.tracks || playlist.tracks.length === 0) return
+  
+  player.clearQueue()
+  playlist.tracks.forEach(track => player.addToQueue(track))
+  player.playTrack(playlist.tracks[0])
+}
+
+async function playAlbum(album) {
+  const tracks = await catalog.fetchReleaseTracks(album.id)
+  if (tracks.length > 0) {
+    player.clearQueue()
+    tracks.forEach(track => {
+      track.albumTitle = album.title
+      track.artworkUrl = album.artworkUrl
+      player.addToQueue(track)
+    })
+    player.playTrack(tracks[0])
+  }
+}
+
+function isCurrentTrack(track) {
+  return player.currentTrack.value?.id === track.id
+}
+
+// Navigation
+function viewPlaylist(playlist) {
+  router.push(`/playlists/${playlist.id}`)
+}
+
+function viewAlbum(album) {
+  router.push(`/releases/${album.id}`)
+}
+
+function viewArtist(artist) {
+  router.push(`/artists/${artist.id}`)
+}
+
+// History
+function clearHistory() {
+  if (confirm('Clear all listening history?')) {
+    // TODO: Implement clear history
+    console.log('Clear history')
+  }
+}
+
+// Utilities
+function getPlaylistCover(playlist) {
+  if (playlist.cover) return playlist.cover
+  if (playlist.tracks?.length > 0 && playlist.tracks[0].artworkUrl) {
+    return playlist.tracks[0].artworkUrl
+  }
+  return '/placeholder-album.png'
+}
+
+function formatDuration(seconds) {
+  if (!seconds) return '0:00'
+  const mins = Math.floor(seconds / 60)
+  const secs = seconds % 60
+  return `${mins}:${secs.toString().padStart(2, '0')}`
+}
+
+function formatYear(date) {
+  if (!date) return ''
+  const d = date.toDate ? date.toDate() : new Date(date)
+  return d.getFullYear()
+}
+
+function formatTime(timestamp) {
+  if (!timestamp) return ''
+  const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp)
+  const now = new Date()
+  const diff = now - date
+  
+  const minutes = Math.floor(diff / 60000)
+  const hours = Math.floor(diff / 3600000)
+  const days = Math.floor(diff / 86400000)
+  
+  if (minutes < 1) return 'Just now'
+  if (minutes < 60) return `${minutes}m ago`
+  if (hours < 24) return `${hours}h ago`
+  return `${days}d ago`
+}
+
+function handleImageError(e) {
+  e.target.src = e.target.classList.contains('artist-image') 
+    ? '/placeholder-artist.png'
+    : '/placeholder-album.png'
+}
+
+onMounted(() => {
+  loadFavoriteDetails()
+})
+</script>
+
 <template>
   <div class="library-page">
     <div class="container">
@@ -385,275 +654,6 @@
     </transition>
   </div>
 </template>
-
-<script setup>
-import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
-import { useLibrary } from '../composables/useLibrary'
-import { useCatalog } from '../composables/useCatalog'
-import { usePlayer } from '../composables/usePlayer'
-
-const router = useRouter()
-const library = useLibrary()
-const catalog = useCatalog()
-const player = usePlayer()
-
-// State
-const activeTab = ref('playlists')
-const showCreatePlaylist = ref(false)
-const showAddToPlaylistModal = ref(false)
-const editingPlaylist = ref(null)
-const selectedTrackForPlaylist = ref(null)
-const favoriteTracks = ref([])
-const favoriteAlbums = ref([])
-const favoriteArtists = ref([])
-
-const playlistForm = ref({
-  title: '',
-  description: '',
-  public: false,
-  collaborative: false
-})
-
-// Tabs configuration
-const tabs = computed(() => [
-  { 
-    id: 'playlists', 
-    label: 'Playlists', 
-    icon: 'list',
-    count: library.playlists.value.length 
-  },
-  { 
-    id: 'tracks', 
-    label: 'Songs', 
-    icon: 'music',
-    count: library.favoriteTracks.value.length 
-  },
-  { 
-    id: 'albums', 
-    label: 'Albums', 
-    icon: 'compact-disc',
-    count: library.favoriteAlbums.value.length 
-  },
-  { 
-    id: 'artists', 
-    label: 'Artists', 
-    icon: 'user',
-    count: library.favoriteArtists.value.length 
-  },
-  { 
-    id: 'history', 
-    label: 'Recent', 
-    icon: 'clock',
-    count: library.recentlyPlayed.value.length 
-  }
-])
-
-// Load favorite items with details
-async function loadFavoriteDetails() {
-  favoriteTracks.value = await library.getFavoriteItems('tracks')
-  favoriteAlbums.value = await library.getFavoriteItems('albums')
-  favoriteArtists.value = await library.getFavoriteItems('artists')
-}
-
-// Playlist management
-function createNewPlaylistForTrack() {
-  showAddToPlaylistModal.value = false
-  showCreatePlaylist.value = true
-}
-
-async function savePlaylist() {
-  try {
-    if (editingPlaylist.value) {
-      await library.updatePlaylist(editingPlaylist.value.id, playlistForm.value)
-    } else {
-      const newPlaylist = await library.createPlaylist(playlistForm.value)
-      
-      // If we were adding a track, add it to the new playlist
-      if (selectedTrackForPlaylist.value) {
-        await library.addToPlaylist(newPlaylist.id, selectedTrackForPlaylist.value)
-      }
-    }
-    
-    closePlaylistModal()
-  } catch (error) {
-    console.error('Error saving playlist:', error)
-    alert(error.message)
-  }
-}
-
-function editPlaylist(playlist) {
-  editingPlaylist.value = playlist
-  playlistForm.value = {
-    title: playlist.title,
-    description: playlist.description || '',
-    public: playlist.public || false,
-    collaborative: playlist.collaborative || false
-  }
-}
-
-async function deletePlaylist(playlist) {
-  if (confirm(`Delete "${playlist.title}"?`)) {
-    try {
-      await library.deletePlaylist(playlist.id)
-    } catch (error) {
-      console.error('Error deleting playlist:', error)
-      alert('Failed to delete playlist')
-    }
-  }
-}
-
-function closePlaylistModal() {
-  showCreatePlaylist.value = false
-  editingPlaylist.value = null
-  selectedTrackForPlaylist.value = null
-  playlistForm.value = {
-    title: '',
-    description: '',
-    public: false,
-    collaborative: false
-  }
-}
-
-// Add to playlist
-function showAddToPlaylist(track) {
-  selectedTrackForPlaylist.value = track
-  showAddToPlaylistModal.value = true
-}
-
-async function addTrackToPlaylist(playlistId) {
-  try {
-    await library.addToPlaylist(playlistId, selectedTrackForPlaylist.value)
-    closeAddToPlaylistModal()
-    // TODO: Show success toast
-  } catch (error) {
-    console.error('Error adding to playlist:', error)
-    alert(error.message)
-  }
-}
-
-function closeAddToPlaylistModal() {
-  showAddToPlaylistModal.value = false
-  selectedTrackForPlaylist.value = null
-}
-
-// Remove from favorites
-async function removeFromFavorites(item, type) {
-  try {
-    await library.toggleFavorite(item, type)
-    await loadFavoriteDetails() // Reload to update UI
-  } catch (error) {
-    console.error('Error removing from favorites:', error)
-  }
-}
-
-// Playback
-function playTrack(track) {
-  player.playTrack(track)
-}
-
-function playAllTracks() {
-  if (favoriteTracks.value.length === 0) return
-  
-  player.clearQueue()
-  favoriteTracks.value.forEach(track => player.addToQueue(track))
-  player.playTrack(favoriteTracks.value[0])
-}
-
-async function playPlaylist(playlist) {
-  if (!playlist.tracks || playlist.tracks.length === 0) return
-  
-  player.clearQueue()
-  playlist.tracks.forEach(track => player.addToQueue(track))
-  player.playTrack(playlist.tracks[0])
-}
-
-async function playAlbum(album) {
-  const tracks = await catalog.fetchReleaseTracks(album.id)
-  if (tracks.length > 0) {
-    player.clearQueue()
-    tracks.forEach(track => {
-      track.albumTitle = album.title
-      track.artworkUrl = album.artworkUrl
-      player.addToQueue(track)
-    })
-    player.playTrack(tracks[0])
-  }
-}
-
-function isCurrentTrack(track) {
-  return player.currentTrack.value?.id === track.id
-}
-
-// Navigation
-function viewPlaylist(playlist) {
-  router.push(`/playlists/${playlist.id}`)
-}
-
-function viewAlbum(album) {
-  router.push(`/releases/${album.id}`)
-}
-
-function viewArtist(artist) {
-  router.push(`/artists/${artist.id}`)
-}
-
-// History
-function clearHistory() {
-  if (confirm('Clear all listening history?')) {
-    // TODO: Implement clear history
-    console.log('Clear history')
-  }
-}
-
-// Utilities
-function getPlaylistCover(playlist) {
-  if (playlist.cover) return playlist.cover
-  if (playlist.tracks?.length > 0 && playlist.tracks[0].artworkUrl) {
-    return playlist.tracks[0].artworkUrl
-  }
-  return '/placeholder-album.png'
-}
-
-function formatDuration(seconds) {
-  if (!seconds) return '0:00'
-  const mins = Math.floor(seconds / 60)
-  const secs = seconds % 60
-  return `${mins}:${secs.toString().padStart(2, '0')}`
-}
-
-function formatYear(date) {
-  if (!date) return ''
-  const d = date.toDate ? date.toDate() : new Date(date)
-  return d.getFullYear()
-}
-
-function formatTime(timestamp) {
-  if (!timestamp) return ''
-  const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp)
-  const now = new Date()
-  const diff = now - date
-  
-  const minutes = Math.floor(diff / 60000)
-  const hours = Math.floor(diff / 3600000)
-  const days = Math.floor(diff / 86400000)
-  
-  if (minutes < 1) return 'Just now'
-  if (minutes < 60) return `${minutes}m ago`
-  if (hours < 24) return `${hours}h ago`
-  return `${days}d ago`
-}
-
-function handleImageError(e) {
-  e.target.src = e.target.classList.contains('artist-image') 
-    ? '/placeholder-artist.png'
-    : '/placeholder-album.png'
-}
-
-onMounted(() => {
-  loadFavoriteDetails()
-})
-</script>
 
 <style scoped>
 .library-page {

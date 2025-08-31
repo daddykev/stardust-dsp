@@ -1,286 +1,3 @@
-<template>
-  <div class="catalog-page">
-    <div class="container">
-      <!-- Page Header -->
-      <div class="page-header">
-        <h1>Music Catalog</h1>
-        <p class="page-subtitle">Browse releases ingested through DDEX deliveries</p>
-      </div>
-
-      <!-- Search Bar -->
-      <div class="search-section">
-        <div class="search-box">
-          <font-awesome-icon icon="search" class="search-icon" />
-          <input 
-            v-model="searchQuery" 
-            type="text" 
-            placeholder="Search for albums, artists, or tracks..."
-            @input="handleSearch"
-            class="search-input"
-          />
-          <button v-if="searchQuery" @click="clearSearch" class="clear-btn">
-            <font-awesome-icon icon="times" />
-          </button>
-        </div>
-      </div>
-
-      <!-- Quick Stats -->
-      <div class="catalog-stats">
-        <div class="stat-badge">
-          <font-awesome-icon icon="compact-disc" />
-          <span>{{ stats.releases }} Releases</span>
-        </div>
-        <div class="stat-badge">
-          <font-awesome-icon icon="music" />
-          <span>{{ stats.tracks }} Tracks</span>
-        </div>
-        <div class="stat-badge">
-          <font-awesome-icon icon="user" />
-          <span>{{ stats.artists }} Artists</span>
-        </div>
-        <div class="stat-badge">
-          <font-awesome-icon icon="clock" />
-          <span>Updated {{ lastUpdated }}</span>
-        </div>
-      </div>
-
-      <!-- Filter Tabs -->
-      <div class="filter-tabs">
-        <button 
-          v-for="tab in tabs" 
-          :key="tab.id"
-          @click="activeTab = tab.id"
-          class="tab-btn"
-          :class="{ active: activeTab === tab.id }"
-        >
-          {{ tab.label }}
-          <span class="tab-count">{{ tab.count }}</span>
-        </button>
-      </div>
-
-      <!-- Loading State -->
-      <div v-if="isLoading" class="loading-state">
-        <div class="spinner"></div>
-        <p>Loading catalog...</p>
-      </div>
-
-      <!-- Empty State -->
-      <div v-else-if="!hasContent" class="empty-state card">
-        <div class="card-body">
-          <font-awesome-icon icon="inbox" class="empty-icon" />
-          <h3>No Content Yet</h3>
-          <p>Your catalog is empty. Content will appear here after successful ingestion.</p>
-          <router-link to="/ingestion" class="btn btn-primary">
-            View Ingestion Pipeline
-          </router-link>
-        </div>
-      </div>
-
-      <!-- Content Grid -->
-      <div v-else>
-        <!-- Releases Tab -->
-        <div v-if="activeTab === 'releases'" class="content-grid">
-          <div 
-            v-for="release in filteredReleases" 
-            :key="release.id"
-            class="release-card card card-hover"
-            @click="viewRelease(release)"
-          >
-            <div class="release-artwork">
-              <!-- Use v-if to conditionally show image or placeholder -->
-              <img 
-                v-if="getArtworkUrl(release)"
-                :src="getArtworkUrl(release)" 
-                :alt="getReleaseTitle(release)"
-                @error="(e) => handleImageError(e, release)"
-              />
-              <!-- Icon placeholder -->
-              <div v-else class="artwork-placeholder">
-                <font-awesome-icon icon="compact-disc" />
-              </div>
-              <div class="release-overlay">
-                <button class="play-btn" @click.stop="playRelease(release)">
-                  <font-awesome-icon icon="play" />
-                </button>
-              </div>
-            </div>
-            <div class="release-info">
-              <h3 class="release-title">{{ getReleaseTitle(release) }}</h3>
-              <p class="release-artist">{{ getReleaseArtist(release) }}</p>
-              <div class="release-meta">
-                <span class="release-type">{{ getReleaseType(release) }}</span>
-                <span class="release-date">{{ formatDate(getReleaseDate(release)) }}</span>
-              </div>
-              <div class="release-stats">
-                <span><font-awesome-icon icon="music" /> {{ getReleaseTrackCount(release) }} tracks</span>
-                <span v-if="release.metadata?.duration">{{ formatDuration(release.metadata.duration) }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Tracks Tab -->
-        <div v-if="activeTab === 'tracks'" class="tracks-list">
-          <table class="tracks-table">
-            <thead>
-              <tr>
-                <th class="col-play"></th>
-                <th class="col-title">Title</th>
-                <th class="col-artist">Artist</th>
-                <th class="col-album">Album</th>
-                <th class="col-duration">Duration</th>
-                <th class="col-isrc">ISRC</th>
-                <th class="col-actions"></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr 
-                v-for="track in filteredTracks" 
-                :key="track.id"
-                class="track-row"
-                :class="{ playing: isCurrentTrack(track) }"
-                @click="playTrack(track)"
-              >
-                <td class="col-play">
-                  <button class="play-btn-sm" @click.stop="playTrack(track)">
-                    <font-awesome-icon 
-                      :icon="isCurrentTrack(track) && player.isPlaying.value ? 'pause' : 'play'" 
-                    />
-                  </button>
-                </td>
-                <td class="col-title">
-                  <div class="track-title-cell">
-                    <span class="track-name">{{ getTrackTitle(track) }}</span>
-                    <span v-if="track.metadata?.version" class="track-version">{{ track.metadata.version }}</span>
-                  </div>
-                </td>
-                <td class="col-artist">{{ getTrackArtist(track) }}</td>
-                <td class="col-album">
-                  <router-link 
-                    v-if="track.releaseId" 
-                    :to="`/releases/${track.releaseId}`"
-                    class="album-link"
-                    @click.stop
-                  >
-                    {{ track.albumTitle || getAlbumTitle(track) }}
-                  </router-link>
-                  <span v-else>{{ track.albumTitle || '-' }}</span>
-                </td>
-                <td class="col-duration">{{ formatDuration(getTrackDuration(track)) }}</td>
-                <td class="col-isrc">
-                  <code>{{ track.isrc }}</code>
-                </td>
-                <td class="col-actions">
-                  <button class="btn-icon" title="Add to Queue" @click.stop="addToQueue(track)">
-                    <font-awesome-icon icon="plus" />
-                  </button>
-                  <button class="btn-icon" title="More Options" @click.stop="showTrackMenu(track)">
-                    <font-awesome-icon icon="ellipsis-v" />
-                  </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <!-- Artists Tab -->
-        <div v-if="activeTab === 'artists'" class="artists-grid">
-          <div 
-            v-for="artist in filteredArtists" 
-            :key="artist.id"
-            class="artist-card card card-hover"
-            @click="viewArtist(artist)"
-          >
-            <div class="artist-image">
-              <img 
-                v-if="artist.profile?.image"
-                :src="artist.profile.image" 
-                :alt="artist.name"
-                @error="(e) => handleArtistImageError(e, artist)"
-              />
-              <div v-else class="artist-placeholder">
-                <font-awesome-icon icon="user" />
-              </div>
-            </div>
-            <div class="artist-info">
-              <h3 class="artist-name">{{ artist.name }}</h3>
-              <div class="artist-stats">
-                <span>{{ artist.stats?.releaseCount || artist.releaseCount || 0 }} releases</span>
-                <span>{{ artist.stats?.trackCount || artist.trackCount || 0 }} tracks</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Pagination -->
-      <div v-if="hasContent && totalPages > 1" class="pagination">
-        <button 
-          @click="currentPage--" 
-          :disabled="currentPage === 1"
-          class="btn btn-secondary"
-        >
-          <font-awesome-icon icon="chevron-left" />
-          Previous
-        </button>
-        <span class="page-info">Page {{ currentPage }} of {{ totalPages }}</span>
-        <button 
-          @click="currentPage++" 
-          :disabled="currentPage === totalPages"
-          class="btn btn-secondary"
-        >
-          Next
-          <font-awesome-icon icon="chevron-right" />
-        </button>
-      </div>
-    </div>
-
-    <!-- Mini Player (shows when track is playing) -->
-    <transition name="slide-up">
-      <div v-if="player.currentTrack.value" class="mini-player">
-        <div class="mini-player-content container">
-          <div class="track-info">
-            <img 
-              v-if="getTrackArtwork(player.currentTrack.value)"
-              :src="getTrackArtwork(player.currentTrack.value)" 
-              :alt="getTrackTitle(player.currentTrack.value)"
-              class="track-artwork"
-              @error="handleMiniPlayerImageError"
-            />
-            <div v-else class="track-artwork artwork-placeholder-mini">
-              <font-awesome-icon icon="music" />
-            </div>
-            <div class="track-details">
-              <h4>{{ getTrackTitle(player.currentTrack.value) }}</h4>
-              <p>{{ getTrackArtist(player.currentTrack.value) }}</p>
-            </div>
-          </div>
-          
-          <div class="player-controls">
-            <button @click="player.previous()" class="control-btn">
-              <font-awesome-icon icon="step-backward" />
-            </button>
-            <button @click="player.togglePlay()" class="control-btn play-pause">
-              <font-awesome-icon :icon="player.isPlaying.value ? 'pause' : 'play'" />
-            </button>
-            <button @click="player.next()" class="control-btn">
-              <font-awesome-icon icon="step-forward" />
-            </button>
-          </div>
-          
-          <div class="progress-section">
-            <span class="time">{{ player.formattedCurrentTime.value }}</span>
-            <div class="progress-bar" @click="handleSeek">
-              <div class="progress-fill" :style="{ width: player.progress.value + '%' }"></div>
-            </div>
-            <span class="time">{{ player.formattedDuration.value }}</span>
-          </div>
-        </div>
-      </div>
-    </transition>
-  </div>
-</template>
-
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
@@ -588,6 +305,289 @@ onMounted(() => {
   loadCatalog()
 })
 </script>
+
+<template>
+  <div class="catalog-page">
+    <div class="container">
+      <!-- Page Header -->
+      <div class="page-header">
+        <h1>Music Catalog</h1>
+        <p class="page-subtitle">Browse releases ingested through DDEX deliveries</p>
+      </div>
+
+      <!-- Search Bar -->
+      <div class="search-section">
+        <div class="search-box">
+          <font-awesome-icon icon="search" class="search-icon" />
+          <input 
+            v-model="searchQuery" 
+            type="text" 
+            placeholder="Search for albums, artists, or tracks..."
+            @input="handleSearch"
+            class="search-input"
+          />
+          <button v-if="searchQuery" @click="clearSearch" class="clear-btn">
+            <font-awesome-icon icon="times" />
+          </button>
+        </div>
+      </div>
+
+      <!-- Quick Stats -->
+      <div class="catalog-stats">
+        <div class="stat-badge">
+          <font-awesome-icon icon="compact-disc" />
+          <span>{{ stats.releases }} Releases</span>
+        </div>
+        <div class="stat-badge">
+          <font-awesome-icon icon="music" />
+          <span>{{ stats.tracks }} Tracks</span>
+        </div>
+        <div class="stat-badge">
+          <font-awesome-icon icon="user" />
+          <span>{{ stats.artists }} Artists</span>
+        </div>
+        <div class="stat-badge">
+          <font-awesome-icon icon="clock" />
+          <span>Updated {{ lastUpdated }}</span>
+        </div>
+      </div>
+
+      <!-- Filter Tabs -->
+      <div class="filter-tabs">
+        <button 
+          v-for="tab in tabs" 
+          :key="tab.id"
+          @click="activeTab = tab.id"
+          class="tab-btn"
+          :class="{ active: activeTab === tab.id }"
+        >
+          {{ tab.label }}
+          <span class="tab-count">{{ tab.count }}</span>
+        </button>
+      </div>
+
+      <!-- Loading State -->
+      <div v-if="isLoading" class="loading-state">
+        <div class="spinner"></div>
+        <p>Loading catalog...</p>
+      </div>
+
+      <!-- Empty State -->
+      <div v-else-if="!hasContent" class="empty-state card">
+        <div class="card-body">
+          <font-awesome-icon icon="inbox" class="empty-icon" />
+          <h3>No Content Yet</h3>
+          <p>Your catalog is empty. Content will appear here after successful ingestion.</p>
+          <router-link to="/ingestion" class="btn btn-primary">
+            View Ingestion Pipeline
+          </router-link>
+        </div>
+      </div>
+
+      <!-- Content Grid -->
+      <div v-else>
+        <!-- Releases Tab -->
+        <div v-if="activeTab === 'releases'" class="content-grid">
+          <div 
+            v-for="release in filteredReleases" 
+            :key="release.id"
+            class="release-card card card-hover"
+            @click="viewRelease(release)"
+          >
+            <div class="release-artwork">
+              <!-- Use v-if to conditionally show image or placeholder -->
+              <img 
+                v-if="getArtworkUrl(release)"
+                :src="getArtworkUrl(release)" 
+                :alt="getReleaseTitle(release)"
+                @error="(e) => handleImageError(e, release)"
+              />
+              <!-- Icon placeholder -->
+              <div v-else class="artwork-placeholder">
+                <font-awesome-icon icon="compact-disc" />
+              </div>
+              <div class="release-overlay">
+                <button class="play-btn" @click.stop="playRelease(release)">
+                  <font-awesome-icon icon="play" />
+                </button>
+              </div>
+            </div>
+            <div class="release-info">
+              <h3 class="release-title">{{ getReleaseTitle(release) }}</h3>
+              <p class="release-artist">{{ getReleaseArtist(release) }}</p>
+              <div class="release-meta">
+                <span class="release-type">{{ getReleaseType(release) }}</span>
+                <span class="release-date">{{ formatDate(getReleaseDate(release)) }}</span>
+              </div>
+              <div class="release-stats">
+                <span><font-awesome-icon icon="music" /> {{ getReleaseTrackCount(release) }} tracks</span>
+                <span v-if="release.metadata?.duration">{{ formatDuration(release.metadata.duration) }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tracks Tab -->
+        <div v-if="activeTab === 'tracks'" class="tracks-list">
+          <table class="tracks-table">
+            <thead>
+              <tr>
+                <th class="col-play"></th>
+                <th class="col-title">Title</th>
+                <th class="col-artist">Artist</th>
+                <th class="col-album">Album</th>
+                <th class="col-duration">Duration</th>
+                <th class="col-isrc">ISRC</th>
+                <th class="col-actions"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr 
+                v-for="track in filteredTracks" 
+                :key="track.id"
+                class="track-row"
+                :class="{ playing: isCurrentTrack(track) }"
+                @click="playTrack(track)"
+              >
+                <td class="col-play">
+                  <button class="play-btn-sm" @click.stop="playTrack(track)">
+                    <font-awesome-icon 
+                      :icon="isCurrentTrack(track) && player.isPlaying.value ? 'pause' : 'play'" 
+                    />
+                  </button>
+                </td>
+                <td class="col-title">
+                  <div class="track-title-cell">
+                    <span class="track-name">{{ getTrackTitle(track) }}</span>
+                    <span v-if="track.metadata?.version" class="track-version">{{ track.metadata.version }}</span>
+                  </div>
+                </td>
+                <td class="col-artist">{{ getTrackArtist(track) }}</td>
+                <td class="col-album">
+                  <router-link 
+                    v-if="track.releaseId" 
+                    :to="`/releases/${track.releaseId}`"
+                    class="album-link"
+                    @click.stop
+                  >
+                    {{ track.albumTitle || getAlbumTitle(track) }}
+                  </router-link>
+                  <span v-else>{{ track.albumTitle || '-' }}</span>
+                </td>
+                <td class="col-duration">{{ formatDuration(getTrackDuration(track)) }}</td>
+                <td class="col-isrc">
+                  <code>{{ track.isrc }}</code>
+                </td>
+                <td class="col-actions">
+                  <button class="btn-icon" title="Add to Queue" @click.stop="addToQueue(track)">
+                    <font-awesome-icon icon="plus" />
+                  </button>
+                  <button class="btn-icon" title="More Options" @click.stop="showTrackMenu(track)">
+                    <font-awesome-icon icon="ellipsis-v" />
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Artists Tab -->
+        <div v-if="activeTab === 'artists'" class="artists-grid">
+          <div 
+            v-for="artist in filteredArtists" 
+            :key="artist.id"
+            class="artist-card card card-hover"
+            @click="viewArtist(artist)"
+          >
+            <div class="artist-image">
+              <img 
+                v-if="artist.profile?.image"
+                :src="artist.profile.image" 
+                :alt="artist.name"
+                @error="(e) => handleArtistImageError(e, artist)"
+              />
+              <div v-else class="artist-placeholder">
+                <font-awesome-icon icon="user" />
+              </div>
+            </div>
+            <div class="artist-info">
+              <h3 class="artist-name">{{ artist.name }}</h3>
+              <div class="artist-stats">
+                <span>{{ artist.stats?.releaseCount || artist.releaseCount || 0 }} releases</span>
+                <span>{{ artist.stats?.trackCount || artist.trackCount || 0 }} tracks</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pagination -->
+      <div v-if="hasContent && totalPages > 1" class="pagination">
+        <button 
+          @click="currentPage--" 
+          :disabled="currentPage === 1"
+          class="btn btn-secondary"
+        >
+          <font-awesome-icon icon="chevron-left" />
+          Previous
+        </button>
+        <span class="page-info">Page {{ currentPage }} of {{ totalPages }}</span>
+        <button 
+          @click="currentPage++" 
+          :disabled="currentPage === totalPages"
+          class="btn btn-secondary"
+        >
+          Next
+          <font-awesome-icon icon="chevron-right" />
+        </button>
+      </div>
+    </div>
+
+    <!-- Mini Player (shows when track is playing) -->
+    <transition name="slide-up">
+      <div v-if="player.currentTrack.value" class="mini-player">
+        <div class="mini-player-content container">
+          <div class="track-info">
+            <img 
+              v-if="getTrackArtwork(player.currentTrack.value)"
+              :src="getTrackArtwork(player.currentTrack.value)" 
+              :alt="getTrackTitle(player.currentTrack.value)"
+              class="track-artwork"
+              @error="handleMiniPlayerImageError"
+            />
+            <div v-else class="track-artwork artwork-placeholder-mini">
+              <font-awesome-icon icon="music" />
+            </div>
+            <div class="track-details">
+              <h4>{{ getTrackTitle(player.currentTrack.value) }}</h4>
+              <p>{{ getTrackArtist(player.currentTrack.value) }}</p>
+            </div>
+          </div>
+          
+          <div class="player-controls">
+            <button @click="player.previous()" class="control-btn">
+              <font-awesome-icon icon="step-backward" />
+            </button>
+            <button @click="player.togglePlay()" class="control-btn play-pause">
+              <font-awesome-icon :icon="player.isPlaying.value ? 'pause' : 'play'" />
+            </button>
+            <button @click="player.next()" class="control-btn">
+              <font-awesome-icon icon="step-forward" />
+            </button>
+          </div>
+          
+          <div class="progress-section">
+            <span class="time">{{ player.formattedCurrentTime.value }}</span>
+            <div class="progress-bar" @click="handleSeek">
+              <div class="progress-fill" :style="{ width: player.progress.value + '%' }"></div>
+            </div>
+            <span class="time">{{ player.formattedDuration.value }}</span>
+          </div>
+        </div>
+      </div>
+    </transition>
+  </div>
+</template>
 
 <style scoped>
 .catalog-page {
