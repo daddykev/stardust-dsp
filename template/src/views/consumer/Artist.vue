@@ -1,9 +1,9 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useCatalog } from '../composables/useCatalog'
-import { usePlayer } from '../composables/usePlayer'
-import { db } from '../firebase'
+import { useCatalog } from '@/composables/useCatalog'
+import { usePlayer } from '@/composables/usePlayer'
+import { db } from '@/firebase'
 import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore'
 
 const route = useRoute()

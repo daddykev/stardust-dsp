@@ -2,10 +2,10 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useCatalog } from '../composables/useCatalog'
-import { usePlayer } from '../composables/usePlayer'
-import { useLibrary } from '../composables/useLibrary'
-import { recommendationsService } from '../services/recommendations'
+import { useCatalog } from '@/composables/useCatalog'
+import { usePlayer } from '@/composables/usePlayer'
+import { useLibrary } from '@/composables/useLibrary'
+import { recommendationsService } from '@/services/recommendations'
 
 const route = useRoute()
 const router = useRouter()

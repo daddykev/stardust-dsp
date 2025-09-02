@@ -2,12 +2,12 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { useCatalog } from '../composables/useCatalog'
-import { useDebounce } from '../composables/useDebounce'
-import TrackList from '../components/browse/TrackList.vue'
-import ArtistGrid from '../components/browse/ArtistGrid.vue'
-import AlbumGrid from '../components/browse/AlbumGrid.vue'
-import PlaylistGrid from '../components/browse/PlaylistGrid.vue'
+import { useCatalog } from '@/composables/useCatalog'
+import { useDebounce } from '@/composables/useDebounce'
+import TrackList from '@/components/browse/TrackList.vue'
+import ArtistGrid from '@/components/browse/ArtistGrid.vue'
+import AlbumGrid from '@/components/browse/AlbumGrid.vue'
+import PlaylistGrid from '@/components/browse/PlaylistGrid.vue'
 
 const router = useRouter()
 const catalog = useCatalog()

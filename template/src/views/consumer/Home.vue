@@ -2,13 +2,13 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { useAuth } from '../composables/useAuth'
-import { useLibrary } from '../composables/useLibrary'
-import { useCatalog } from '../composables/useCatalog'
-import { usePlayer } from '../composables/usePlayer'
-import AlbumCarousel from '../components/browse/AlbumCarousel.vue'
-import ArtistCarousel from '../components/browse/ArtistCarousel.vue'
-import TrackList from '../components/browse/TrackList.vue'
+import { useAuth } from '@/composables/useAuth'
+import { useLibrary } from '@/composables/useLibrary'
+import { useCatalog } from '@/composables/useCatalog'
+import { usePlayer } from '@/composables/usePlayer'
+import AlbumCarousel from '@/components/browse/AlbumCarousel.vue'
+import ArtistCarousel from '@/components/browse/ArtistCarousel.vue'
+import TrackList from '@/components/browse/TrackList.vue'
 
 const router = useRouter()
 const auth = useAuth()

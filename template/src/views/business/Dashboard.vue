@@ -1,8 +1,8 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { useAuth } from '../composables/useAuth'
-import { db } from '../firebase'
+import { useAuth } from '@/composables/useAuth'
+import { db } from '@/firebase'
 import { 
   collection, 
   query, 

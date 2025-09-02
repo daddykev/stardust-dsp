@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { doc, getDoc, onSnapshot } from 'firebase/firestore'
-import { db } from '../firebase'
+import { db } from '@/firebase'
 
 const route = useRoute()
 const router = useRouter()

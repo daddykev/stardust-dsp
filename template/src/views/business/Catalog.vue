@@ -1,8 +1,8 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { useCatalog } from '../composables/useCatalog'
-import { usePlayer } from '../composables/usePlayer'
+import { useCatalog } from '@/composables/useCatalog'
+import { usePlayer } from '@/composables/usePlayer'
 
 const router = useRouter()
 const catalog = useCatalog()

@@ -2,11 +2,11 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useAuth } from '../composables/useAuth'
-import { usePlayer } from '../composables/usePlayer'
-import { useLibrary } from '../composables/useLibrary'
-import { useSocial } from '../composables/useSocial'
-import { db } from '../firebase'
+import { useAuth } from '@/composables/useAuth'
+import { usePlayer } from '@/composables/usePlayer'
+import { useLibrary } from '@/composables/useLibrary'
+import { useSocial } from '@/composables/useSocial'
+import { db } from '@/firebase'
 import { doc, getDoc, updateDoc, onSnapshot } from 'firebase/firestore'
 import draggable from 'vuedraggable'
 

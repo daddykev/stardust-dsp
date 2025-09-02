@@ -1,7 +1,7 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { auth, db } from '../firebase'
+import { auth, db } from '@/firebase'
 import { 
   createUserWithEmailAndPassword, 
   signInWithPopup, 

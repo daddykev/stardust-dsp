@@ -1,162 +1,337 @@
+// template/src/router/index.js
 import { createRouter, createWebHistory } from 'vue-router'
-import { useAuth } from '../composables/useAuth'
-import SplashPage from '../views/SplashPage.vue'
-import Login from '../views/Login.vue'
-import Signup from '../views/Signup.vue'
-import Dashboard from '../views/Dashboard.vue'
-import Distributors from '../views/Distributors.vue'
-import Ingestion from '../views/Ingestion.vue'
-import Catalog from '../views/Catalog.vue'
-import Library from '../views/Library.vue'
-import Settings from '../views/Settings.vue'
-import Testing from '../views/Testing.vue'
+import { auth } from '../firebase'
+import { onAuthStateChanged } from 'firebase/auth'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
+    // ==========================================
+    // PUBLIC ROUTES (No authentication required)
+    // ==========================================
     {
       path: '/',
-      name: 'home',
-      component: SplashPage
+      name: 'splash',
+      component: () => import('../views/public/SplashPage.vue'),
+      meta: { requiresAuth: false }
     },
     {
       path: '/login',
       name: 'login',
-      component: Login,
-      meta: { requiresGuest: true }
+      component: () => import('../views/public/Login.vue'),
+      meta: { requiresAuth: false }
     },
     {
       path: '/signup',
       name: 'signup',
-      component: Signup,
-      meta: { requiresGuest: true }
+      component: () => import('../views/public/Signup.vue'),
+      meta: { requiresAuth: false }
+    },
+
+    // ==========================================
+    // CONSUMER ROUTES (Main user experience)
+    // ==========================================
+    {
+      path: '/home',
+      name: 'home',
+      component: () => import('../views/consumer/Home.vue'),
+      meta: { requiresAuth: true }
     },
     {
-      path: '/',
-      name: 'home',
-      component: () => import('../views/Home.vue'),
+      path: '/browse',
+      name: 'browse',
+      component: () => import('../views/consumer/Browse.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/browse/:category',
+      name: 'browse-category',
+      component: () => import('../views/consumer/Browse.vue'),
       meta: { requiresAuth: true }
     },
     {
       path: '/search',
       name: 'search',
-      component: () => import('../views/Search.vue'),
-      meta: { requiresAuth: true }
-    },
-    {
-      path: '/profile/:id?',
-      name: 'profile',
-      component: () => import('../views/Profile.vue'),
-      meta: { requiresAuth: true }
-    },
-    {
-      path: '/browse/:category?',
-      name: 'browse',
-      component: () => import('../views/Browse.vue'),
-      meta: { requiresAuth: true }
-    },
-    {
-      path: '/playlists/:id',
-      name: 'playlist-detail',
-      component: () => import('../views/PlaylistDetail.vue'),
-      meta: { requiresAuth: true }
-    },
-    {
-      path: '/dashboard',
-      name: 'dashboard',
-      component: Dashboard,
-      meta: { requiresAuth: true }
-    },
-    {
-      path: '/catalog',
-      name: 'catalog',
-      component: Catalog,
-      meta: { requiresAuth: true }
-    },
-    {
-      path: '/settings',
-      name: 'settings',
-      component: Settings,
-      meta: { requiresAuth: true }
-    },
-    {
-      path: '/testing',
-      name: 'testing',
-      component: Testing,
-      meta: { requiresAuth: true }
-    },
-    {
-      path: '/releases/:id',
-      name: 'release-detail',
-      component: () => import('../views/ReleaseDetail.vue'),
-      meta: { requiresAuth: true }
-    },
-    {
-      path: '/artists/:id',
-      name: 'artist-detail',
-      component: () => import('../views/Artist.vue'),
+      component: () => import('../views/consumer/Search.vue'),
       meta: { requiresAuth: true }
     },
     {
       path: '/library',
       name: 'library',
-      component: Library,
+      component: () => import('../views/consumer/Library.vue'),
       meta: { requiresAuth: true }
+    },
+    {
+      path: '/profile',
+      name: 'profile-current',
+      component: () => import('../views/consumer/Profile.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/profile/:id',
+      name: 'profile',
+      component: () => import('../views/consumer/Profile.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/artists/:id',
+      name: 'artist',
+      component: () => import('../views/consumer/Artist.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/releases/:id',
+      name: 'release-detail',
+      component: () => import('../views/consumer/ReleaseDetail.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/albums/:id',
+      name: 'album-detail',
+      component: () => import('../views/consumer/ReleaseDetail.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/playlists/:id',
+      name: 'playlist-detail',
+      component: () => import('../views/consumer/PlaylistDetail.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/playlists/:id/edit',
+      name: 'playlist-edit',
+      component: () => import('../views/consumer/PlaylistDetail.vue'),
+      meta: { requiresAuth: true, editMode: true }
+    },
+
+    // Radio routes (part of consumer experience)
+    {
+      path: '/radio/artist/:id',
+      name: 'artist-radio',
+      component: () => import('../views/consumer/Home.vue'), // Or create Radio.vue
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/radio/track/:id',
+      name: 'track-radio',
+      component: () => import('../views/consumer/Home.vue'), // Or create Radio.vue
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/radio/album/:id',
+      name: 'album-radio',
+      component: () => import('../views/consumer/Home.vue'), // Or create Radio.vue
+      meta: { requiresAuth: true }
+    },
+
+    // Discovery routes
+    {
+      path: '/genre/:id',
+      name: 'genre',
+      component: () => import('../views/consumer/Browse.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/mood/:id',
+      name: 'mood',
+      component: () => import('../views/consumer/Browse.vue'),
+      meta: { requiresAuth: true }
+    },
+
+    // ==========================================
+    // BUSINESS ROUTES (Label/distributor features)
+    // ==========================================
+    {
+      path: '/dashboard',
+      name: 'dashboard',
+      component: () => import('../views/business/Dashboard.vue'),
+      meta: { requiresAuth: true, requiresBusinessAccess: true }
+    },
+    {
+      path: '/catalog',
+      name: 'catalog',
+      component: () => import('../views/business/Catalog.vue'),
+      meta: { requiresAuth: true, requiresBusinessAccess: true }
     },
     {
       path: '/distributors',
       name: 'distributors',
-      component: Distributors,
-      meta: { requiresAuth: true }
+      component: () => import('../views/business/Distributors.vue'),
+      meta: { requiresAuth: true, requiresBusinessAccess: true }
     },
     {
       path: '/ingestion',
       name: 'ingestion',
-      component: Ingestion,
-      meta: { requiresAuth: true }
+      component: () => import('../views/business/Ingestion.vue'),
+      meta: { requiresAuth: true, requiresBusinessAccess: true }
     },
     {
       path: '/ingestion/:id',
       name: 'ingestion-detail',
-      component: () => import('../views/IngestionDetail.vue'),
+      component: () => import('../views/business/IngestionDetail.vue'),
+      meta: { requiresAuth: true, requiresBusinessAccess: true }
+    },
+    {
+      path: '/settings',
+      name: 'settings',
+      component: () => import('../views/business/Settings.vue'),
       meta: { requiresAuth: true }
     },
-    // Catch-all route - redirect to home
+    {
+      path: '/testing',
+      name: 'testing',
+      component: () => import('../views/business/Testing.vue'),
+      meta: { requiresAuth: true, requiresBusinessAccess: true }
+    },
+
+    // Business management routes
+    {
+      path: '/business',
+      redirect: '/dashboard'
+    },
+    {
+      path: '/manage',
+      redirect: '/dashboard'
+    },
+
+    // ==========================================
+    // FALLBACK ROUTES
+    // ==========================================
+    {
+      path: '/account',
+      redirect: '/profile'
+    },
+    {
+      path: '/music',
+      redirect: '/browse'
+    },
+    {
+      path: '/tracks/:id',
+      name: 'track-detail',
+      redirect: to => `/releases/${to.params.id}` // Or create dedicated track view
+    },
+    
+    // 404 catch-all route (must be last)
     {
       path: '/:pathMatch(.*)*',
-      redirect: '/'
+      name: 'not-found',
+      component: () => import('../views/public/SplashPage.vue'), // Or create NotFound.vue
+      meta: { requiresAuth: false }
     }
   ]
 })
 
-// Navigation guard for protected routes
+// ==========================================
+// NAVIGATION GUARDS
+// ==========================================
+
+// Auth state management
+let isAuthReady = false
+let currentUser = null
+
+// Wait for auth to be ready
+onAuthStateChanged(auth, (user) => {
+  currentUser = user
+  isAuthReady = true
+})
+
+// Main navigation guard
 router.beforeEach(async (to, from, next) => {
-  const { isAuthenticated, isLoading } = useAuth()
-  
-  // Wait for auth state to be determined
-  if (isLoading.value) {
-    // Wait for auth state to load
-    await new Promise(resolve => {
-      const unwatch = setInterval(() => {
-        const { isLoading: loading } = useAuth()
-        if (!loading.value) {
-          clearInterval(unwatch)
-          resolve()
-        }
-      }, 50)
+  // Wait for auth to be ready on initial load
+  if (!isAuthReady) {
+    await new Promise((resolve) => {
+      const unsubscribe = onAuthStateChanged(auth, (user) => {
+        currentUser = user
+        isAuthReady = true
+        unsubscribe()
+        resolve()
+      })
     })
   }
-  
-  const { isAuthenticated: isAuth } = useAuth()
-  
-  if (to.meta.requiresAuth && !isAuth.value) {
-    // Redirect to login if trying to access protected route
+
+  const requiresAuth = to.matched.some(record => record.meta.requiresAuth)
+  const requiresBusinessAccess = to.matched.some(record => record.meta.requiresBusinessAccess)
+  const isPublicRoute = to.matched.some(record => record.meta.requiresAuth === false)
+
+  // Redirect authenticated users away from login/signup
+  if (currentUser && (to.name === 'login' || to.name === 'signup')) {
+    next('/home')
+    return
+  }
+
+  // Handle routes that require authentication
+  if (requiresAuth && !currentUser) {
+    // Store intended destination
+    localStorage.setItem('redirectAfterLogin', to.fullPath)
     next('/login')
-  } else if (to.meta.requiresGuest && isAuth.value) {
-    // Redirect to dashboard if trying to access guest-only route (login/signup)
-    next('/dashboard')
-  } else {
-    next()
+    return
+  }
+
+  // Handle business access requirements
+  if (requiresBusinessAccess && currentUser) {
+    // Check if user has business access
+    // You might want to check user roles/claims here
+    const hasBusinessAccess = await checkBusinessAccess(currentUser)
+    
+    if (!hasBusinessAccess) {
+      next('/home') // Redirect to consumer home
+      return
+    }
+  }
+
+  // Root path handling
+  if (to.path === '/') {
+    if (currentUser) {
+      // Check if user has business access to determine default landing
+      const hasBusinessAccess = await checkBusinessAccess(currentUser)
+      next(hasBusinessAccess ? '/dashboard' : '/home')
+    } else {
+      next() // Show splash page
+    }
+    return
+  }
+
+  // Proceed with navigation
+  next()
+})
+
+// Helper function to check business access
+async function checkBusinessAccess(user) {
+  if (!user) return false
+  
+  try {
+    // Method 1: Check custom claims
+    const idTokenResult = await user.getIdTokenResult()
+    if (idTokenResult.claims.businessAccess || idTokenResult.claims.admin) {
+      return true
+    }
+    
+    // Method 2: Check Firestore for user role
+    // const userDoc = await getDoc(doc(db, 'users', user.uid))
+    // const userData = userDoc.data()
+    // return userData?.role === 'business' || userData?.role === 'admin'
+    
+    // Method 3: Check if user has any releases in catalog (is an artist/label)
+    // const catalogQuery = query(collection(db, 'releases'), where('userId', '==', user.uid), limit(1))
+    // const snapshot = await getDocs(catalogQuery)
+    // return !snapshot.empty
+    
+    // For now, you might want to check localStorage or a simple flag
+    return localStorage.getItem('userType') === 'business'
+  } catch (error) {
+    console.error('Error checking business access:', error)
+    return false
+  }
+}
+
+// After successful login, check for redirect
+router.afterEach((to, from) => {
+  if (to.name === 'home' || to.name === 'dashboard') {
+    const redirectPath = localStorage.getItem('redirectAfterLogin')
+    if (redirectPath) {
+      localStorage.removeItem('redirectAfterLogin')
+      router.push(redirectPath)
+    }
   }
 })
 

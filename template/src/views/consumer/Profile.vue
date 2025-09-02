@@ -2,13 +2,13 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useAuth } from '../composables/useAuth'
-import { useProfile } from '../composables/useProfile'
-import PlaylistCard from '../components/library/PlaylistCard.vue'
-import RecentlyPlayedList from '../components/profile/RecentlyPlayedList.vue'
-import UserList from '../components/profile/UserList.vue'
-import ActivityFeed from '../components/profile/ActivityFeed.vue'
-import EditProfileModal from '../components/profile/EditProfileModal.vue'
+import { useAuth } from '@/composables/useAuth'
+import { useProfile } from '@/composables/useProfile'
+import PlaylistCard from '@/components/library/PlaylistCard.vue'
+import RecentlyPlayedList from '@/components/profile/RecentlyPlayedList.vue'
+import UserList from '@/components/profile/UserList.vue'
+import ActivityFeed from '@/components/profile/ActivityFeed.vue'
+import EditProfileModal from '@/components/profile/EditProfileModal.vue'
 
 const route = useRoute()
 const router = useRouter()

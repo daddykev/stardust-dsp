@@ -16,7 +16,7 @@ import {
   serverTimestamp
 } from 'firebase/firestore'
 import { ref as storageRef, uploadBytes } from 'firebase/storage'
-import { db, storage } from '../firebase'
+import { db, storage } from '@/firebase'
 
 const router = useRouter()
 

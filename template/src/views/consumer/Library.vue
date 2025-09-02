@@ -1,9 +1,9 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { useLibrary } from '../composables/useLibrary'
-import { useCatalog } from '../composables/useCatalog'
-import { usePlayer } from '../composables/usePlayer'
+import { useLibrary } from '@/composables/useLibrary'
+import { useCatalog } from '@/composables/useCatalog'
+import { usePlayer } from '@/composables/usePlayer'
 
 const router = useRouter()
 const library = useLibrary()
