@@ -32,6 +32,36 @@ const router = createRouter({
       meta: { requiresGuest: true }
     },
     {
+      path: '/',
+      name: 'home',
+      component: () => import('../views/Home.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/search',
+      name: 'search',
+      component: () => import('../views/Search.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/profile/:id?',
+      name: 'profile',
+      component: () => import('../views/Profile.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/browse/:category?',
+      name: 'browse',
+      component: () => import('../views/Browse.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/playlists/:id',
+      name: 'playlist-detail',
+      component: () => import('../views/PlaylistDetail.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
       path: '/dashboard',
       name: 'dashboard',
       component: Dashboard,

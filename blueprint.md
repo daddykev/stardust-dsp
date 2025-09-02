@@ -181,36 +181,32 @@ stardust-dsp/
 │   │   │   ├── themes.css        # CSS custom properties, light/dark themes ✅
 │   │   │   └── components.css    # Reusable component & utility classes ✅
 │   │   ├── components/           # UI components
-│   │   │   ├── NavBar.vue        # Navigation component ✅
 │   │   │   ├── browse/           # Browse & discovery
+│   │   │   │   ├── AlbumCarousel.vue #  ✅
 │   │   │   │   ├── AlbumGrid.vue # Album grid ❌
-│   │   │   │   ├── ArtistPage.vue # Artist page ❌
-│   │   │   │   ├── GenreExplorer.vue # Genre explorer ❌
-│   │   │   │   └── HomePage.vue  # Home page ❌
-│   │   │   ├── player/           # Music player
-│   │   │   │   ├── Controls.vue  # Player controls ❌
-│   │   │   │   ├── FullPlayer.vue # Full player view ✅
-│   │   │   │   ├── NowPlaying.vue # Now playing view ❌
-│   │   │   │   ├── ProgressBar.vue # Progress indicator ❌
-│   │   │   │   └── Queue.vue     # Queue management ❌
-│   │   │   ├── search/           # Search functionality
-│   │   │   │   ├── SearchBar.vue # Search input ❌
-│   │   │   │   ├── SearchResults.vue # Results display ❌
-│   │   │   │   └── Filters.vue   # Search filters ❌
+│   │   │   │   ├── ArtistCarousel.vue #  ✅
+│   │   │   │   ├── ArtistGrid.vue #  ✅
+│   │   │   │   ├── PlaylistGrid.vue #  ✅
+│   │   │   │   └── Tracklist.vue  #  ✅
 │   │   │   ├── library/          # User library
-│   │   │   │   ├── Playlists.vue # Playlist management ❌
-│   │   │   │   ├── Favorites.vue # Favorite tracks ❌
-│   │   │   │   └── History.vue   # Listening history ❌
-│   │   │   └── admin/            # Admin panel
-│   │   │       ├── Deliveries.vue # Delivery management ❌
-│   │   │       ├── Catalog.vue   # Catalog admin ❌
-│   │   │       └── Analytics.vue # Analytics dashboard ❌
+│   │   │   │   └── PlaylistCard.vue   #  ✅
+│   │   │   ├── player/           # Music player
+│   │   │   │   └── FullPlayer.vue # Full player view ✅
+│   │   │   ├── profile/          # 
+│   │   │   │   ├── ActivityFeed.vue #  ✅
+│   │   │   │   ├── EditProfileModal.vue #  ✅
+│   │   │   │   ├── RecentlyPlaedList.vue #  ✅
+│   │   │   │   └── UserList.vue  #  ✅
+│   │   │   └── NavBar.vue        # Main nav component ✅
 │   │   ├── composables/          # Vue composables
 │   │   │   ├── useAuth.js        # Basic authentication ✅
 │   │   │   ├── useCatalog.js     # Catalog operations ✅
+│   │   │   ├── useDebounce.js    #  ✅
 │   │   │   ├── useDualAuth.js    # Dual auth model ✅
 │   │   │   ├── useLibrary.js     # Library management ✅
-│   │   │   └── usePlayer.js      # Audio playback ✅
+│   │   │   ├── usePlayer.js      # Audio playback ✅
+│   │   │   ├── useProfile.js     #  ✅
+│   │   │   └── useSocial.js      #  ✅
 │   │   ├── router/               # Vue Router
 │   │   │   └── index.js          # Route definitions ✅
 │   │   ├── services/             # API services
