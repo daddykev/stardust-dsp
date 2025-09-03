@@ -24,7 +24,7 @@ We believe in democratizing music streaming technology. The core platform is and
 
 ## 🚧 Current Development Status
 
-**Alpha Release - v0.7.0** (August 2025)
+**Alpha Release - v0.8.0** (September 2025)
 
 ### ✅ Phase 1: Foundation - COMPLETE
 - [x] Project architecture and blueprint
