@@ -13,14 +13,11 @@ Stardust DSP enables anyone to deploy a fully functional, DDEX-compliant streami
 
 **Stardust DSP is open-source software.** The entire platform is MIT licensed with no paid tiers, no enterprise edition, and no artificial limitations. You get a complete, production-ready streaming platform with ALL ingestion protocols (FTP, SFTP, S3, API), full ERN processing, adaptive streaming, and everything needed to run a professional music service.
 
-We believe in democratizing music streaming technology. The core platform is and will always be completely free and fully functional.
-
 ### Why This Matters
-- **No vendor lock-in**: Deploy and use forever without paying a cent
 - **No artificial limits**: No track caps, no watermarks, no time bombs
 - **Complete functionality**: Every feature needed for professional streaming
 - **True community ownership**: Fork it, modify it, deploy it - it's yours
-- **Perfect for testing**: Ideal companion for testing Stardust Distro deliveries
+- **Perfect for testing**: Ideal companion for testing DDEX deliveries from your distribution platform
 
 ## 🚧 Current Development Status
 
@@ -107,75 +104,64 @@ We believe in democratizing music streaming technology. The core platform is and
 - [ ] Security audit
 - [ ] npm package publication
 
-## ✨ Core Features (100% Free & Open Source)
+## ✨ Core Features
 
-### Complete Streaming Platform
-✅ **ERN Ingestion** *(Phase 2 - COMPLETE)*
-- Direct pipeline processing architecture
-- Automatic DDEX delivery processing via HTTP API
-- Multi-version ERN support (3.8.2, 4.2, 4.3)
-- DDEX Workbench validation integration
-- MD5 hash validation for file integrity
-- Transaction-based locking for reliable processing
-- Scheduled queue processing (every minute)
-- Automatic acknowledgments
-- Separate file transfer job system with retry logic
+### Complete DDEX Ingestion Pipeline
+- **Direct Pipeline Architecture**: Simplified processing without Pub/Sub complexity
+- **ERN Support**: Handles ERN 3.8.2, 4.2, and 4.3 formats
+- **DDEX Workbench Validation**: Automatic validation of all deliveries
+- **File Transfer System**: Secure file handling with MD5 validation
+- **Transaction Locking**: Prevents race conditions and duplicate processing
+- **Scheduled Processing**: Automatic queue handling every minute
+- **Real-time Monitoring**: Live status updates via dashboard
+- **Acknowledgments**: Automatic generation of DDEX-compliant receipts
 
-✅ **Music Streaming** *(Phase 3 - COMPLETE)*
-- Audio playback with Howler.js
-- Queue management and controls
-- Mini player with persistent playback
-- Streaming URL generation ready
-- Multiple quality options preparation
-- Progress tracking and seek controls
+### Music Streaming Platform
+- **Audio Playback**: Howler.js-powered player with queue management
+- **Catalog Management**: Browse releases, tracks, and artists
+- **Search & Discovery**: Real-time search with filters and recommendations
+- **User Library**: Personal playlists, favorites, and listening history
+- **Artist Profiles**: Complete artist pages with discography
+- **Release Pages**: Detailed album views with track listings
+- **Mini Player**: Persistent playback across navigation
+- **Cross-device Sync**: Real-time state synchronization
 
-✅ **Catalog Management** *(Phase 3 - COMPLETE)*
-- Browse releases, tracks, and artists
-- Automatic metadata display
-- Artist profile pages
-- Album artwork display
-- Search and filtering
-- Related content linking
+### Consumer Features
+- **Personalized Home**: Time-based greetings and tailored content
+- **Browse Interface**: Discover by genre, mood, charts, and new releases
+- **Advanced Search**: Multi-faceted filters with recent searches
+- **Playlist Management**: Create, edit, share, and collaborate on playlists
+- **Social Features**: Follow users and artists, activity feeds, sharing
+- **User Profiles**: Public profiles with stats and activity
+- **Favorites System**: Save tracks, albums, and artists
+- **Recommendations**: Pattern-based suggestion engine
+- **Recently Played**: Automatic history tracking
 
-✅ **User Experience** *(Phase 3 - COMPLETE)*
-- Personal music library
-- Basic playlist functionality
-- Favorites system
-- Listening history tracking
-- Cross-device state sync
-- Responsive design
+### Analytics & Reporting
+- **Real-time Tracking**: Automatic play tracking with progress updates
+- **Analytics Dashboard**: Interactive charts and visualizations (Chart.js)
+- **DSR Generation**: DDEX-compliant Digital Sales Reports
+- **Usage Reports**: 6 report types (streaming, geographic, demographic, etc.)
+- **Royalty Calculations**: Pro-rata, user-centric, and hybrid methods
+- **Distributor Portal**: Dedicated reporting interface for partners
+- **Multi-format Export**: DDEX XML, CSV, Excel, JSON
+- **Territory Analytics**: Geographic breakdowns and insights
+- **API Access**: RESTful API for distributor integration
 
-✅ **Search & Discovery** *(Phase 3 - COMPLETE)*
-- Real-time search across catalog
-- Filter by releases, tracks, artists
-- Basic discovery features
-- Catalog statistics
-- Related content suggestions
-- Trending content ready
+### Professional Dashboard
+- **Ingestion Monitoring**: Real-time processing status
+- **Distributor Management**: Partner account administration
+- **System Health**: Platform performance metrics
+- **User Statistics**: Active users, engagement metrics
+- **Catalog Overview**: Release and track statistics
+- **Testing Suite**: 20+ automated tests for platform health
 
-🚧 **Analytics & Reporting** *(Coming Phase 5)*
-- Real-time streaming metrics
-- DSR generation
-- Usage reports
-- Revenue tracking
-- Territory analytics
-- Play count tracking
-
-✅ **Professional Dashboard** *(Phase 2-3 - COMPLETE)*
-- Ingestion monitoring with real-time status
-- Distributor management
-- Processing pipeline visibility
-- File transfer tracking
-- Catalog overview
-- User statistics
-- System health monitoring
-
-✅ **White-Label Ready**
-- Custom branding
-- Theme customization
-- Multi-tenant support
-- Domain mapping
-- Feature toggles
+### White-Label Ready
+- **Custom Branding**: Logo, colors, fonts customization
+- **Theme System**: Light/dark modes with CSS variables
+- **Multi-tenant Support**: Multiple brands on one platform
+- **Domain Mapping**: Custom domain configuration
+- **Feature Toggles**: Enable/disable features per deployment
 
 ## 🚀 Quick Start
 
@@ -230,10 +216,10 @@ stardust-dsp deliveries list
 # Click any release to start streaming
 ```
 
-## 🏗️ Ingestion Architecture
+## 🏗️ Architecture Overview
 
 ### Direct Pipeline Processing
-The platform uses a **direct pipeline architecture** for processing DDEX deliveries, chosen for its simplicity, debuggability, and cost efficiency:
+The platform uses a **direct pipeline architecture** for processing DDEX deliveries:
 
 ```javascript
 // Processing flow with transaction-based locking
@@ -254,14 +240,6 @@ received → pending → waiting_for_files → files_ready → parsing →
 validating → processing_releases → completed (or failed/cancelled)
 ```
 
-### Key Architectural Features
-- **Transaction-based locking**: Prevents race conditions and duplicate processing
-- **Scheduled processing**: Runs every minute to handle queued deliveries
-- **File transfer jobs**: Separate system for handling large audio/image files
-- **MD5 validation**: Ensures file integrity during transfers
-- **Retry logic**: Automatic retries with exponential backoff
-- **30-50% faster** than pub/sub approaches for typical workloads
-
 ### Scheduled Functions
 - **processPendingDeliveries** (every minute): Main processing queue
 - **processPendingFileTransfers** (every 5 minutes): File transfer handling
@@ -271,12 +249,13 @@ validating → processing_releases → completed (or failed/cancelled)
 
 - **Frontend**: Vue 3 (Composition API) + Vite
 - **Backend**: Firebase (Firestore, Functions, Storage, Auth)
-- **Audio**: Howler.js for cross-browser audio playback ✅
-- **Streaming**: Firebase Storage + CDN with adaptive bitrate prep
+- **Audio**: Howler.js for cross-browser audio playback
+- **Charts**: Chart.js for analytics visualizations
+- **Streaming**: Firebase Storage + CDN
 - **Search**: Client-side filtering + Algolia/Typesense ready
-- **Ingestion**: Direct pipeline with Cloud Functions ✅
-- **Validation**: DDEX Workbench API integration ✅
-- **Analytics**: Firebase Analytics + custom DSR generation prep
+- **Ingestion**: Direct pipeline with Cloud Functions
+- **Validation**: DDEX Workbench API integration
+- **Analytics**: Firebase Analytics + custom DSR generation
 - **Styling**: Custom CSS architecture with theme system
 - **Icons**: FontAwesome free icons
 - **CLI**: Node.js with Commander.js
@@ -314,59 +293,37 @@ npm run emulators
 
 ```
 stardust-dsp/
-├── template/            # Default Vue app template
+├── template/                     # Default Vue app template
 │   ├── src/
-│   │   ├── views/       # Page components (✅ 11/14 complete)
-│   │   │   ├── Dashboard.vue     # Dashboard with stats (✅)
-│   │   │   ├── Login.vue         # Login page (✅)
-│   │   │   ├── Signup.vue        # Signup page (✅)
-│   │   │   ├── SplashPage.vue    # Landing page (✅)
-│   │   │   ├── Distributors.vue  # Distributor mgmt (✅)
-│   │   │   ├── Ingestion.vue     # Ingestion monitor (✅)
-│   │   │   ├── IngestionDetail.vue # Delivery details (✅)
-│   │   │   ├── Catalog.vue       # Browse catalog (✅)
-│   │   │   ├── ReleaseDetail.vue # Release details (✅)
-│   │   │   ├── Artist.vue        # Artist profile (✅)
-│   │   │   ├── Library.vue       # User library (✅)
-│   │   │   ├── Search.vue        # Search results (📅 Phase 4)
-│   │   │   ├── Account.vue       # User account (📅 Phase 4)
-│   │   │   └── Admin.vue         # Admin panel (📅 Phase 5)
-│   │   ├── components/  # UI components (✅ Core complete)
-│   │   │   └── NavBar.vue        # Navigation (✅)
-│   │   ├── composables/ # Vue composables (✅ 5/5 complete)
-│   │   │   ├── useAuth.js        # Authentication (✅)
-│   │   │   ├── useDualAuth.js    # Dual auth model (✅)
-│   │   │   ├── useCatalog.js     # Catalog operations (✅)
-│   │   │   ├── usePlayer.js      # Audio playback (✅)
-│   │   │   └── useLibrary.js     # Library management (✅)
-│   │   ├── services/    # Backend services (🚧 Streaming complete)
-│   │   ├── stores/      # State management (📅 Phase 4)
-│   │   ├── router/      # Routing config (✅ Complete)
-│   │   ├── assets/      # CSS architecture (✅ Complete)
-│   │   └── firebase.js  # Firebase config (✅ Complete)
-│   └── functions/       # Cloud Functions (✅ Ingestion complete)
-│       └── ingestion/   # Direct pipeline processing (✅ All complete)
-│           ├── receiver.js       # HTTP endpoint & validation (✅)
-│           ├── parser.js         # ERN XML parsing (✅)
-│           ├── validator.js      # DDEX Workbench validation (✅)
-│           ├── processor.js      # Release & asset processing (✅)
-│           └── notifier.js       # Acknowledgments & notifications (✅)
-├── cli/                 # CLI tool (✅ Complete)
-│   ├── bin/             # Executable scripts
-│   └── commands/        # All CLI commands
-├── packages/            # Core packages
-│   └── @stardust-dsp/
-│       ├── dsp-core/    # Core logic (🚧 Started)
-│       ├── player/      # Audio player (✅ Complete via composables)
-│       └── storefront/  # UI components (📅 Phase 4)
-├── firebase.json        # Firebase configuration (✅)
-├── firestore.rules      # Security rules (✅)
-└── docs/                # Documentation (📅 Phase 7)
+│   │   ├── views/                # Page components (18+ views)
+│   │   │   ├── business/         # Industry views
+│   │   │   ├── consumer/         # Consumer views
+│   │   │   └── public/           # Public views
+│   │   ├── components/           # UI components
+│   │   │   ├── analytics/        # Analytics components
+│   │   │   ├── browse/           # Browse & discovery
+│   │   │   ├── library/          # User library
+│   │   │   ├── player/           # Music player
+│   │   │   └── profile/          # User profile
+│   │   ├── composables/          # Vue composables (9 total)
+│   │   ├── services/             # Backend services
+│   │   ├── router/               # Routing config
+│   │   ├── assets/               # CSS architecture
+│   │   └── firebase.js           # Firebase config
+│   └── functions/                # Cloud Functions
+│       ├── ingestion/            # Direct pipeline processing
+│       └── reporting/            # Analytics & DSR
+├── cli/                          # CLI tool
+│   ├── bin/                      # Executable scripts
+│   └── commands/                 # All CLI commands
+├── firebase.json                 # Firebase configuration
+├── firestore.rules               # Security rules
+└── docs/                         # Documentation
 ```
 
 ## 🤝 Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## 🔗 Stardust Ecosystem
 
@@ -377,13 +334,16 @@ Stardust DSP is part of the larger Stardust ecosystem:
 
 All tools share unified authentication for seamless workflow integration.
 
-## 📈 Performance Targets
+## 📈 Performance
 
+### Current Performance
 - **Ingestion Speed**: <2 min for standard album ✅
 - **Search Latency**: <50ms response time ✅
 - **Stream Start**: <500ms buffering ✅
 - **Page Load**: <2s initial load ✅
 - **Processing Efficiency**: 30-50% faster than pub/sub ✅
+
+### Scalability Targets
 - **Catalog Size**: 1M+ tracks supported
 - **Concurrent Users**: 10K+ simultaneous streams
 - **Uptime**: 99.9% availability
@@ -415,6 +375,11 @@ This means you can:
 ### Community Support
 - **GitHub Issues**: [Bug reports and features](https://github.com/daddykev/stardust-dsp/issues)
 - **Documentation**: Comprehensive guides and API docs
+
+### Professional Support
+For enterprise deployments or custom development:
+- **Email**: support@stardust-dsp.org
+- **Consulting**: Available for large-scale implementations
 
 ## 🙏 Acknowledgments
 
