@@ -5,6 +5,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: var(--space-xs);
   padding: var(--space-sm) var(--space-lg);
   font-size: var(--text-base);
   font-weight: var(--font-medium);
