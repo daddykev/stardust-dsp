@@ -119,16 +119,12 @@ We believe in democratizing music streaming technology. The core platform is and
 - [x] Add follow artist functionality
 
 ### 🚧 Phase 6: Analytics & Reporting (Weeks 21-24)
-- [ ] Play tracking implementation
-- [ ] Analytics dashboard
-- [ ] DSR generator
-- [ ] Usage reports
-- [ ] Revenue tracking
-- [ ] Territory analytics
-- [ ] Admin panel
-- [ ] Content moderation tools
-- [ ] System monitoring
-- [ ] Performance metrics
+- [ ] Implement play tracking
+- [ ] Build analytics dashboard
+- [ ] Create DSR generator
+- [ ] Add usage reports
+- [ ] Implement royalty calculations
+- [ ] Add distributor reporting portal
 
 ### 📅 Phase 7: Testing & Launch (Weeks 25-28)
 - [ ] Unit test suite
