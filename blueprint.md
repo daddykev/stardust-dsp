@@ -140,10 +140,10 @@ stardust-dsp/
 │   │   ├── api-reference.md      # API docs ❌
 │   │   ├── customization.md      # Theming guide ❌
 │   │   ├── DDEX.md               # Unified implementation standards ✅
+│   │   ├── dsr-reporting.md      # DSR guide ❌
 │   │   ├── getting-started.md    # Quick start guide ❌
 │   │   ├── ingestion-guide.md    # ERN ingestion ❌
-│   │   ├── streaming-setup.md    # Streaming config ❌
-│   │   └── dsr-reporting.md      # DSR guide ❌
+│   │   └── streaming-setup.md    # Streaming config ❌
 │   ├── functions/                # Cloud Functions
 │   │   ├── ingestion/            # ERN processing
 │   │   │   ├── receiver.js       # Receive deliveries ✅
@@ -182,63 +182,61 @@ stardust-dsp/
 │   │   │   └── components.css    # Reusable component & utility classes ✅
 │   │   ├── components/           # UI components
 │   │   │   ├── browse/           # Browse & discovery
-│   │   │   │   ├── AlbumCarousel.vue #  ✅
-│   │   │   │   ├── AlbumGrid.vue # Album grid ❌
-│   │   │   │   ├── ArtistCarousel.vue #  ✅
-│   │   │   │   ├── ArtistGrid.vue #  ✅
-│   │   │   │   ├── PlaylistGrid.vue #  ✅
-│   │   │   │   └── Tracklist.vue  #  ✅
+│   │   │   │   ├── AlbumCarousel.vue  # Scrollable carousel of album covers ✅
+│   │   │   │   ├── AlbumGrid.vue  # Grid layout of album covers ✅
+│   │   │   │   ├── ArtistCarousel.vue # Scrollable carousel of artist profiles ✅
+│   │   │   │   ├── ArtistGrid.vue  # Grid layout of artist profiles ✅
+│   │   │   │   ├── PlaylistGrid.vue  # User and curated playlists ✅
+│   │   │   │   └── TrackList.vue  # Track listing ✅
 │   │   │   ├── library/          # User library
-│   │   │   │   └── PlaylistCard.vue   #  ✅
+│   │   │   │   └── PlaylistCard.vue  # A single playlist card ✅
 │   │   │   ├── player/           # Music player
-│   │   │   │   └── FullPlayer.vue # Full player view ✅
+│   │   │   │   └── FullPlayer.vue  # Full player view ✅
 │   │   │   ├── profile/          # 
-│   │   │   │   ├── ActivityFeed.vue #  ✅
-│   │   │   │   ├── EditProfileModal.vue #  ✅
-│   │   │   │   ├── RecentlyPlaedList.vue #  ✅
-│   │   │   │   └── UserList.vue  #  ✅
+│   │   │   │   ├── ActivityFeed.vue  # Chronological feed of user activities ✅
+│   │   │   │   ├── EditProfileModal.vue  # Modal to edit user profile ✅
+│   │   │   │   ├── RecentlyPlayedList.vue  # Recently played tracks with timestamps ✅
+│   │   │   │   └── UserList.vue  # A list of users for following ✅
 │   │   │   └── NavBar.vue        # Main nav component ✅
 │   │   ├── composables/          # Vue composables
 │   │   │   ├── useAuth.js        # Basic authentication ✅
 │   │   │   ├── useCatalog.js     # Catalog operations ✅
-│   │   │   ├── useDebounce.js    #  ✅
+│   │   │   ├── useDebounce.js    # Input handling for search fields ✅
 │   │   │   ├── useDualAuth.js    # Dual auth model ✅
 │   │   │   ├── useLibrary.js     # Library management ✅
 │   │   │   ├── usePlayer.js      # Audio playback ✅
-│   │   │   ├── useProfile.js     #  ✅
-│   │   │   └── useSocial.js      #  ✅
+│   │   │   ├── useProfile.js     # Manages user profile data ✅
+│   │   │   └── useSocial.js      # Handles social features ✅
 │   │   ├── router/               # Vue Router
 │   │   │   └── index.js          # Route definitions ✅
 │   │   ├── services/             # API services
-│   │   │   ├── analytics.js      # Usage tracking ❌
-│   │   │   ├── catalog.js        # Catalog API ❌
-│   │   │   ├── search.js         # Search service ❌
 │   │   │   └── streaming.js      # Streaming service ✅
 │   │   ├── views/                # Page views
-│   │   │   ├── Account.vue       # User account ❌
-│   │   │   ├── Admin.vue         # Admin dashboard ❌
-│   │   │   ├── Artist.vue        # Artist profile ✅
-│   │   │   ├── Catalog.vue       # Browse catalog ✅
-│   │   │   ├── Dashboard.vue     # User dashboard ✅
-│   │   │   ├── Distributors.vue  # Distributor management ✅
-│   │   │   ├── Ingestion.vue     # Ingestion monitoring ✅
-│   │   │   ├── IngestionDetail.vue # Delivery details ✅
-│   │   │   ├── Library.vue       # User library ✅
-│   │   │   ├── Login.vue         # Login page ✅
-│   │   │   ├── ReleaseDetail.vue # Release/Album details ✅
-│   │   │   ├── Search.vue        # Search results ❌
-│   │   │   ├── Signup.vue        # Signup page ✅
-│   │   │   ├── SplashPage.vue    # Landing page ✅
-│   │   │   └── Testing.vue       # Testing Suite ✅
+│   │   │   ├── business/
+│   │   │   │   ├── Catalog.vue       # Browse catalog ✅
+│   │   │   │   ├── Dashboard.vue     # User dashboard ✅
+│   │   │   │   ├── Distributors.vue  # Distributor management ✅
+│   │   │   │   ├── Ingestion.vue     # Ingestion monitoring ✅
+│   │   │   │   ├── IngestionDetail.vue  # Delivery details ✅
+│   │   │   │   ├── Settings.vue      #  ✅
+│   │   │   │   └── Testing.vue       # Testing Suite ✅
+│   │   │   ├── consumer/
+│   │   │   │   ├── Artist.vue        #  ✅
+│   │   │   │   ├── Browser.vue       #  ✅
+│   │   │   │   ├── Home.vue          #  ✅
+│   │   │   │   ├── Library.vue       # User library ✅
+│   │   │   │   ├── Login.vue         # Login page ✅
+│   │   │   │   ├── PlaylistDetail.vue  #  ✅
+│   │   │   │   ├── Profile.vue       #  ✅
+│   │   │   │   ├── ReleaseDetail.vue # Release/Album details ✅
+│   │   │   │   └── Search.vue        # Search results ✅
+│   │   │   ├── public/
+│   │   │   │   ├── Login.vue         # Login page ✅
+│   │   │   │   ├── Signup.vue        # Signup page ✅
+│   │   │   │   └── SplashPage.vue    # Landing page ✅
 │   │   ├── App.vue               # Root component ✅
 │   │   ├── firebase.js           # Firebase initialization ✅
 │   │   └── main.js               # Entry point ✅
-│   ├── workers/                  # Service workers
-│   │   └── offline.js            # Offline playback ❌
-│   ├── scripts/                  # Scripts
-│   │   ├── setup.js              # Initial setup ❌
-│   │   ├── configure.js          # Configuration ❌
-│   │   └── seed.js               # Demo data seeder ❌
 │   ├── .env                      # Environment variables (git-ignored) ✅
 │   ├── .env.example              # Environment template ✅
 │   ├── .gitignore                # Git ignore ✅
@@ -246,6 +244,7 @@ stardust-dsp/
 │   ├── firestore.indexes.json    # Database indexes ✅
 │   ├── firestore.rules           # Firestore rules ✅
 │   ├── index.html                # HTML app entry ✅
+│   ├── jsconfig.json             # JavaScript config ✅
 │   ├── package.json              # Project dependencies ✅
 │   ├── storage.rules             # Cloud storage rules ✅
 │   └── vite.config.js            # Vite configuration ✅

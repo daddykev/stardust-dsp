@@ -19,6 +19,7 @@ import {
 } from 'firebase/firestore'
 import { db, auth } from '../firebase'
 import { useAuth } from './useAuth'
+import { usePlayer } from './usePlayer'
 
 // Global library state
 const favorites = ref({
@@ -556,6 +557,116 @@ export function useLibrary() {
     }
   }
   
+  /**
+   * Get followed artists (needed by Home.vue)
+   */
+  async function getFollowedArtists(limit = 10) {
+    if (!user.value) return []
+    
+    try {
+      const artistIds = favorites.value.artists || []
+      if (artistIds.length === 0) return []
+      
+      const artists = []
+      const limitedIds = artistIds.slice(0, limit)
+      
+      for (const artistId of limitedIds) {
+        const artistDoc = await getDoc(doc(db, 'artists', artistId))
+        if (artistDoc.exists()) {
+          artists.push({ id: artistDoc.id, ...artistDoc.data() })
+        }
+      }
+      
+      return artists
+    } catch (err) {
+      console.error('Error getting followed artists:', err)
+      return []
+    }
+  }
+  
+  /**
+   * Shuffle library tracks (needed by Home.vue)
+   */
+  async function shuffleLibrary() {
+    if (!user.value) return
+    
+    try {
+      // Get all favorite tracks with details
+      const tracks = await getFavoriteItems('tracks')
+      if (tracks.length === 0) return
+      
+      // Shuffle and play
+      const shuffled = [...tracks].sort(() => Math.random() - 0.5)
+      
+      // Use the player composable to play
+      const player = usePlayer()
+      player.clearQueue()
+      shuffled.forEach(track => player.addToQueue(track))
+      if (shuffled.length > 0) {
+        player.playTrack(shuffled[0])
+      }
+    } catch (err) {
+      console.error('Error shuffling library:', err)
+    }
+  }
+  
+  /**
+   * Check if a specific item is favorite
+   */
+  async function isFavorite(itemId, type) {
+    return checkIsFavorite(itemId, type)
+  }
+  
+  /**
+   * Add a favorite (simpler API)
+   */
+  async function addFavorite(itemId, type) {
+    if (!user.value) return false
+    
+    try {
+      const favoritesRef = doc(db, 'users', user.value.uid, 'library', 'favorites')
+      
+      await updateDoc(favoritesRef, {
+        [type]: arrayUnion(itemId),
+        updatedAt: serverTimestamp()
+      })
+      
+      // Update local state
+      if (!favorites.value[type].includes(itemId)) {
+        favorites.value[type].push(itemId)
+      }
+      
+      return true
+    } catch (err) {
+      console.error(`Error adding favorite ${type}:`, err)
+      return false
+    }
+  }
+  
+  /**
+   * Remove a favorite (simpler API)
+   */
+  async function removeFavorite(itemId, type) {
+    if (!user.value) return false
+    
+    try {
+      const favoritesRef = doc(db, 'users', user.value.uid, 'library', 'favorites')
+      
+      await updateDoc(favoritesRef, {
+        [type]: arrayRemove(itemId),
+        updatedAt: serverTimestamp()
+      })
+      
+      // Update local state
+      favorites.value[type] = favorites.value[type].filter(id => id !== itemId)
+      
+      return true
+    } catch (err) {
+      console.error(`Error removing favorite ${type}:`, err)
+      return false
+    }
+  }
+  
   // Computed properties
   const favoriteTracks = computed(() => favorites.value.tracks || [])
   const favoriteAlbums = computed(() => favorites.value.albums || [])
@@ -604,6 +715,13 @@ export function useLibrary() {
     addToPlaylist,
     removeFromPlaylist,
     reorderPlaylistTracks,
-    addToHistory
+    addToHistory,
+    
+    // New/Missing methods
+    getFollowedArtists,
+    shuffleLibrary,
+    isFavorite,
+    addFavorite,
+    removeFavorite
   }
 }

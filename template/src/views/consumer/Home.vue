@@ -53,8 +53,9 @@ const subtitle = computed(() => {
 
 // Load personalized content
 async function loadHomeContent() {
-  // Load recently played
-  recentItems.value = await library.getRecentlyPlayed(6)
+  // The library composable automatically loads recently played items
+  // Just use the reactive ref directly
+  recentItems.value = library.recentlyPlayed.value.slice(0, 6)
   
   // Generate recommendations (placeholder)
   recommendedPlaylists.value = await generateRecommendations()

@@ -9,7 +9,8 @@ import {
   doc,
   getDoc,
   onSnapshot,
-  startAfter
+  startAfter,
+  Timestamp
 } from 'firebase/firestore'
 import { db } from '../firebase'
 
@@ -52,7 +53,7 @@ export function useCatalog() {
       const q = query(
         collection(db, 'releases'),
         where('status', '==', 'active'),
-        orderBy('ingestion.processedAt', 'desc'),  // Changed from 'releaseDate' to correct path
+        orderBy('ingestion.processedAt', 'desc'),
         limit(limitCount)
       )
       
@@ -124,7 +125,7 @@ export function useCatalog() {
       const q = query(
         collection(db, 'releases'),
         where('status', '==', 'active'),
-        orderBy('ingestion.processedAt', 'desc'),  // Changed from 'releaseDate'
+        orderBy('ingestion.processedAt', 'desc'),
         startAfter(lastDoc.value),
         limit(limitCount)
       )
@@ -151,6 +152,90 @@ export function useCatalog() {
       return []
     } finally {
       isLoading.value = false
+    }
+  }
+
+  /**
+   * Get new releases (needed by Home.vue)
+   */
+  async function getNewReleases(limitCount = 8) {
+    try {
+      const thirtyDaysAgo = new Date()
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+      
+      const q = query(
+        collection(db, 'releases'),
+        where('status', '==', 'active'),
+        where('ingestion.processedAt', '>=', Timestamp.fromDate(thirtyDaysAgo)),
+        orderBy('ingestion.processedAt', 'desc'),
+        limit(limitCount)
+      )
+      
+      const snapshot = await getDocs(q)
+      return snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }))
+    } catch (err) {
+      console.error('Error fetching new releases:', err)
+      
+      // Fallback: just get recent releases
+      try {
+        const fallbackQuery = query(
+          collection(db, 'releases'),
+          where('status', '==', 'active'),
+          limit(limitCount)
+        )
+        
+        const snapshot = await getDocs(fallbackQuery)
+        return snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }))
+      } catch (fallbackErr) {
+        console.error('Fallback query also failed:', fallbackErr)
+        return []
+      }
+    }
+  }
+  
+  /**
+   * Get trending tracks (needed by Home.vue)
+   */
+  async function getTrendingTracks(limitCount = 10) {
+    try {
+      // For now, just get tracks with highest play count
+      // In production, this would use analytics data
+      const q = query(
+        collection(db, 'tracks'),
+        orderBy('stats.playCount', 'desc'),
+        limit(limitCount)
+      )
+      
+      const snapshot = await getDocs(q)
+      return snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }))
+    } catch (err) {
+      console.error('Error fetching trending tracks:', err)
+      
+      // Fallback: just get recent tracks
+      try {
+        const fallbackQuery = query(
+          collection(db, 'tracks'),
+          limit(limitCount)
+        )
+        
+        const snapshot = await getDocs(fallbackQuery)
+        return snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }))
+      } catch (fallbackErr) {
+        console.error('Fallback query also failed:', fallbackErr)
+        return []
+      }
     }
   }
 
@@ -202,7 +287,28 @@ export function useCatalog() {
       }))
     } catch (err) {
       console.error('Error fetching release tracks:', err)
-      return []
+      
+      // Fallback without ordering if index doesn't exist
+      try {
+        const fallbackQuery = query(
+          collection(db, 'tracks'),
+          where('releaseId', '==', releaseId)
+        )
+        
+        const snapshot = await getDocs(fallbackQuery)
+        const tracks = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }))
+        
+        // Sort in memory
+        tracks.sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0))
+        
+        return tracks
+      } catch (fallbackErr) {
+        console.error('Fallback query also failed:', fallbackErr)
+        return []
+      }
     }
   }
 
@@ -234,31 +340,31 @@ export function useCatalog() {
           artist.stats = {
             ...artist.stats,
             releaseCount: artist.releases.length
-          };
+          }
         } else {
           // Fallback: count releases by artist name
           const releasesQuery = query(
             collection(db, 'releases'),
             where('metadata.displayArtist', '==', artist.name),
             where('status', '==', 'active')
-          );
-          const releasesSnapshot = await getDocs(releasesQuery);
+          )
+          const releasesSnapshot = await getDocs(releasesQuery)
           artist.stats = {
             ...artist.stats,
             releaseCount: releasesSnapshot.size
-          };
+          }
         }
         
         // Count tracks
         const tracksQuery = query(
           collection(db, 'tracks'),
           where('metadata.displayArtist', '==', artist.name)
-        );
-        const tracksSnapshot = await getDocs(tracksQuery);
+        )
+        const tracksSnapshot = await getDocs(tracksQuery)
         artist.stats = {
           ...artist.stats,
           trackCount: tracksSnapshot.size
-        };
+        }
       }
       
       return artists.value
@@ -294,7 +400,9 @@ export function useCatalog() {
           .map(doc => ({ id: doc.id, ...doc.data() }))
           .filter(r => 
             r.title?.toLowerCase().includes(queryLower) ||
-            r.artistName?.toLowerCase().includes(queryLower)
+            r.artistName?.toLowerCase().includes(queryLower) ||
+            r.metadata?.title?.toLowerCase().includes(queryLower) ||
+            r.metadata?.displayArtist?.toLowerCase().includes(queryLower)
           )
       }
       
@@ -306,6 +414,8 @@ export function useCatalog() {
           .filter(t => 
             t.title?.toLowerCase().includes(queryLower) ||
             t.artistName?.toLowerCase().includes(queryLower) ||
+            t.metadata?.title?.toLowerCase().includes(queryLower) ||
+            t.metadata?.displayArtist?.toLowerCase().includes(queryLower) ||
             t.isrc?.toLowerCase().includes(queryLower)
           )
       }
@@ -326,6 +436,13 @@ export function useCatalog() {
     } finally {
       isLoading.value = false
     }
+  }
+
+  /**
+   * Search with filters
+   */
+  async function search(searchQuery, filters = {}) {
+    return searchCatalog(searchQuery, 'all')
   }
 
   /**
@@ -364,31 +481,64 @@ export function useCatalog() {
       const artist = { id: artistDoc.id, ...artistDoc.data() }
       
       // Get artist's releases
-      const releasesQuery = query(
-        collection(db, 'releases'),
-        where('artistName', '==', artist.name),
-        orderBy('releaseDate', 'desc')
-      )
-      
-      const releasesSnapshot = await getDocs(releasesQuery)
-      artist.releases = releasesSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }))
+      try {
+        const releasesQuery = query(
+          collection(db, 'releases'),
+          where('metadata.displayArtist', '==', artist.name),
+          where('status', '==', 'active'),
+          orderBy('ingestion.processedAt', 'desc')
+        )
+        
+        const releasesSnapshot = await getDocs(releasesQuery)
+        artist.releases = releasesSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }))
+      } catch (err) {
+        console.error('Error fetching artist releases:', err)
+        // Fallback without ordering
+        const fallbackQuery = query(
+          collection(db, 'releases'),
+          where('metadata.displayArtist', '==', artist.name),
+          where('status', '==', 'active')
+        )
+        
+        const releasesSnapshot = await getDocs(fallbackQuery)
+        artist.releases = releasesSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }))
+      }
       
       // Get top tracks
-      const tracksQuery = query(
-        collection(db, 'tracks'),
-        where('artistName', '==', artist.name),
-        orderBy('stats.playCount', 'desc'),
-        limit(10)
-      )
-      
-      const tracksSnapshot = await getDocs(tracksQuery)
-      artist.topTracks = tracksSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }))
+      try {
+        const tracksQuery = query(
+          collection(db, 'tracks'),
+          where('metadata.displayArtist', '==', artist.name),
+          orderBy('stats.playCount', 'desc'),
+          limit(10)
+        )
+        
+        const tracksSnapshot = await getDocs(tracksQuery)
+        artist.topTracks = tracksSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }))
+      } catch (err) {
+        console.error('Error fetching top tracks:', err)
+        // Fallback: just get some tracks
+        const fallbackQuery = query(
+          collection(db, 'tracks'),
+          where('metadata.displayArtist', '==', artist.name),
+          limit(10)
+        )
+        
+        const tracksSnapshot = await getDocs(fallbackQuery)
+        artist.topTracks = tracksSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }))
+      }
       
       return artist
     } catch (err) {
@@ -443,8 +593,13 @@ export function useCatalog() {
     fetchReleaseTracks,
     fetchAllArtists,
     searchCatalog,
+    search,
     getRelease,
     getArtist,
-    getTrack
+    getTrack,
+    
+    // New methods for Home.vue
+    getNewReleases,
+    getTrendingTracks
   }
 }
