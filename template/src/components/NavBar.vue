@@ -45,7 +45,6 @@ const businessNavItems = computed(() => {
     { name: 'Catalog', path: '/catalog', icon: 'music' },
     { name: 'Ingestion', path: '/ingestion', icon: 'inbox' },
     { name: 'Distributors', path: '/distributors', icon: 'building' },
-    { name: 'Analytics', path: '/analytics', icon: 'chart-line' },
     { name: 'Settings', path: '/settings', icon: 'cog' }
   ]
   
