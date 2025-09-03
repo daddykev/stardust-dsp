@@ -2,7 +2,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { useAuth } from '@/composables/useAuth'
+import { useAuth } from '@/composables/useDualAuth'
 import { useLibrary } from '@/composables/useLibrary'
 import { useCatalog } from '@/composables/useCatalog'
 import { usePlayer } from '@/composables/usePlayer'

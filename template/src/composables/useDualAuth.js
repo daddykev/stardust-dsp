@@ -1,5 +1,6 @@
+// template/src/composables/useDualAuth.js
 import { ref, computed } from 'vue'
-import { auth, db } from '../firebase'
+import { auth, db } from '@/firebase'
 import { 
   onAuthStateChanged, 
   signOut,
@@ -28,10 +29,11 @@ export function useDualAuth() {
         try {
           const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid))
           if (userDoc.exists()) {
-            userProfile.value = { id: userDoc.id, ...userDoc.data() }
+            const data = userDoc.data()
+            userProfile.value = { id: userDoc.id, ...data }
             
             // Determine user type based on role
-            const role = userDoc.data().role
+            const role = data.role || data.userType // Support legacy userType field
             if (role === 'admin') {
               userType.value = 'admin'
             } else if (role === 'label' || role === 'distributor') {
@@ -52,6 +54,7 @@ export function useDualAuth() {
           }
         } catch (error) {
           console.error('Error fetching user profile:', error)
+          userType.value = 'consumer' // Default to consumer on error
         }
       } else {
         user.value = null
@@ -68,14 +71,14 @@ export function useDualAuth() {
     userType.value === 'industry' || userType.value === 'admin'
   )
   const isAdmin = computed(() => userType.value === 'admin')
+  const hasBusinessAccess = computed(() => 
+    userType.value === 'admin' || userType.value === 'industry'
+  )
 
-  /**
-   * Sign up as consumer (listener)
-   */
+  // Sign up methods...
   async function signUpConsumer(email, password, displayName) {
     const userCredential = await createUserWithEmailAndPassword(auth, email, password)
     
-    // Create consumer profile
     await setDoc(doc(db, 'users', userCredential.user.uid), {
       uid: userCredential.user.uid,
       email,
@@ -98,19 +101,15 @@ export function useDualAuth() {
     return userCredential.user
   }
 
-  /**
-   * Sign up as industry user (label/distributor)
-   */
   async function signUpIndustry(email, password, organizationName, type = 'label') {
     const userCredential = await createUserWithEmailAndPassword(auth, email, password)
     
-    // Create industry profile
     await setDoc(doc(db, 'users', userCredential.user.uid), {
       uid: userCredential.user.uid,
       email,
       organizationName,
       displayName: organizationName,
-      role: type, // 'label' or 'distributor'
+      role: type,
       verified: false,
       deliveryCredentials: {
         ftpUsername: organizationName.toLowerCase().replace(/\s+/g, '-'),
@@ -127,17 +126,11 @@ export function useDualAuth() {
     return userCredential.user
   }
 
-  /**
-   * Enhanced sign in that preserves user type
-   */
   async function signIn(email, password) {
     const userCredential = await signInWithEmailAndPassword(auth, email, password)
     return userCredential.user
   }
 
-  /**
-   * Sign out current user
-   */
   async function logout() {
     try {
       await signOut(auth)
@@ -150,9 +143,6 @@ export function useDualAuth() {
     }
   }
 
-  /**
-   * Generate API key for industry users
-   */
   function generateAPIKey() {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
     let key = 'sdsp_'
@@ -174,6 +164,7 @@ export function useDualAuth() {
     isConsumer,
     isIndustryUser,
     isAdmin,
+    hasBusinessAccess,
     
     // Methods
     signUpConsumer,
@@ -182,3 +173,6 @@ export function useDualAuth() {
     logout
   }
 }
+
+// Export as default for easier migration from useAuth
+export const useAuth = useDualAuth

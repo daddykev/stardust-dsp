@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, nextTick } from 'vue'
-import { useAuth } from '@/composables/useAuth'
+import { useAuth } from '@/composables/useDualAuth'
 import { db, functions, storage } from '@/firebase'
 import { collection, getDocs, query, limit, doc, getDoc, where, orderBy } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'

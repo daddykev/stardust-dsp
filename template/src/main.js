@@ -93,7 +93,8 @@ import {
   faImage,
   faSearch,
   faUser,
-  faBell
+  faBell,
+  faBriefcase
 } from '@fortawesome/free-solid-svg-icons'
 
 // Import brand icons
@@ -191,7 +192,8 @@ library.add(
   faImage,
   faSearch,
   faUser,
-  faBell
+  faBell,
+  faBriefcase
 )
 
 // Add brand icons to the library

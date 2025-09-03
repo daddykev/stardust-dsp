@@ -1,7 +1,8 @@
 // template/src/router/index.js
 import { createRouter, createWebHistory } from 'vue-router'
-import { auth } from '../firebase'
+import { auth, db } from '@/firebase'
 import { onAuthStateChanged } from 'firebase/auth'
+import { doc, getDoc } from 'firebase/firestore'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -234,20 +235,43 @@ const router = createRouter({
 // Auth state management
 let isAuthReady = false
 let currentUser = null
+let userRole = null
 
 // Wait for auth to be ready
-onAuthStateChanged(auth, (user) => {
+onAuthStateChanged(auth, async (user) => {
   currentUser = user
+  
+  if (user) {
+    // Fetch user role from Firestore
+    try {
+      const userDoc = await getDoc(doc(db, 'users', user.uid))
+      if (userDoc.exists()) {
+        userRole = userDoc.data().role || userDoc.data().userType || 'consumer'
+      }
+    } catch (error) {
+      console.error('Error fetching user role:', error)
+      userRole = 'consumer'
+    }
+  } else {
+    userRole = null
+  }
+  
   isAuthReady = true
 })
 
 // Main navigation guard
 router.beforeEach(async (to, from, next) => {
-  // Wait for auth to be ready on initial load
+  // Wait for auth to be ready
   if (!isAuthReady) {
     await new Promise((resolve) => {
-      const unsubscribe = onAuthStateChanged(auth, (user) => {
+      const unsubscribe = onAuthStateChanged(auth, async (user) => {
         currentUser = user
+        if (user) {
+          const userDoc = await getDoc(doc(db, 'users', user.uid))
+          userRole = userDoc.exists() ? 
+            (userDoc.data().role || userDoc.data().userType || 'consumer') : 
+            'consumer'
+        }
         isAuthReady = true
         unsubscribe()
         resolve()
@@ -257,30 +281,33 @@ router.beforeEach(async (to, from, next) => {
 
   const requiresAuth = to.matched.some(record => record.meta.requiresAuth)
   const requiresBusinessAccess = to.matched.some(record => record.meta.requiresBusinessAccess)
-  const isPublicRoute = to.matched.some(record => record.meta.requiresAuth === false)
+  const requiresAdmin = to.matched.some(record => record.meta.requiresAdmin)
 
   // Redirect authenticated users away from login/signup
   if (currentUser && (to.name === 'login' || to.name === 'signup')) {
-    next('/home')
+    // Admin users go to dashboard, others to home
+    next(userRole === 'admin' ? '/dashboard' : '/home')
     return
   }
 
   // Handle routes that require authentication
   if (requiresAuth && !currentUser) {
-    // Store intended destination
     localStorage.setItem('redirectAfterLogin', to.fullPath)
     next('/login')
     return
   }
 
-  // Handle business access requirements
-  if (requiresBusinessAccess && currentUser) {
-    // Check if user has business access
-    // You might want to check user roles/claims here
-    const hasBusinessAccess = await checkBusinessAccess(currentUser)
-    
+  // Check admin access
+  if (requiresAdmin && userRole !== 'admin') {
+    next('/home')
+    return
+  }
+
+  // Check business access
+  if (requiresBusinessAccess) {
+    const hasBusinessAccess = ['admin', 'label', 'distributor'].includes(userRole)
     if (!hasBusinessAccess) {
-      next('/home') // Redirect to consumer home
+      next('/home')
       return
     }
   }
@@ -288,57 +315,21 @@ router.beforeEach(async (to, from, next) => {
   // Root path handling
   if (to.path === '/') {
     if (currentUser) {
-      // Check if user has business access to determine default landing
-      const hasBusinessAccess = await checkBusinessAccess(currentUser)
-      next(hasBusinessAccess ? '/dashboard' : '/home')
+      // Admin users default to dashboard
+      if (userRole === 'admin') {
+        next('/dashboard')
+      } else if (['label', 'distributor'].includes(userRole)) {
+        next('/dashboard')
+      } else {
+        next('/home')
+      }
     } else {
       next() // Show splash page
     }
     return
   }
 
-  // Proceed with navigation
   next()
-})
-
-// Helper function to check business access
-async function checkBusinessAccess(user) {
-  if (!user) return false
-  
-  try {
-    // Method 1: Check custom claims
-    const idTokenResult = await user.getIdTokenResult()
-    if (idTokenResult.claims.businessAccess || idTokenResult.claims.admin) {
-      return true
-    }
-    
-    // Method 2: Check Firestore for user role
-    // const userDoc = await getDoc(doc(db, 'users', user.uid))
-    // const userData = userDoc.data()
-    // return userData?.role === 'business' || userData?.role === 'admin'
-    
-    // Method 3: Check if user has any releases in catalog (is an artist/label)
-    // const catalogQuery = query(collection(db, 'releases'), where('userId', '==', user.uid), limit(1))
-    // const snapshot = await getDocs(catalogQuery)
-    // return !snapshot.empty
-    
-    // For now, you might want to check localStorage or a simple flag
-    return localStorage.getItem('userType') === 'business'
-  } catch (error) {
-    console.error('Error checking business access:', error)
-    return false
-  }
-}
-
-// After successful login, check for redirect
-router.afterEach((to, from) => {
-  if (to.name === 'home' || to.name === 'dashboard') {
-    const redirectPath = localStorage.getItem('redirectAfterLogin')
-    if (redirectPath) {
-      localStorage.removeItem('redirectAfterLogin')
-      router.push(redirectPath)
-    }
-  }
 })
 
 export default router

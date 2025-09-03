@@ -3,7 +3,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { collection, getDocs, doc, updateDoc, deleteDoc, orderBy, query, where } from 'firebase/firestore'
 import { db, auth } from '../../firebase'
-import { useAuth } from '../../composables/useAuth'
+import { useAuth } from '@/composables/useDualAuth'
 
 const { userProfile } = useAuth()
 

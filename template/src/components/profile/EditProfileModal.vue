@@ -1,8 +1,8 @@
 <!-- template/src/components/profile/EditProfileModal.vue -->
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
-import { useProfile } from '../../composables/useProfile'
-import { useDebounce } from '../../composables/useDebounce'
+import { useProfile } from '@/composables/useProfile'
+import { useDebounce } from '@/composables/useDebounce'
 
 const props = defineProps({
   profile: {

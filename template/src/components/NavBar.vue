@@ -1,3 +1,179 @@
+// template/src/components/NavBar.vue
+<script setup>
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
+import { useDualAuth } from '@/composables/useDualAuth'
+
+const props = defineProps({
+  currentTheme: {
+    type: String,
+    default: 'light'
+  }
+})
+
+const emit = defineEmits(['toggle-theme'])
+
+const router = useRouter()
+const route = useRoute()
+const { 
+  isAuthenticated, 
+  userProfile, 
+  userType,
+  isAdmin,
+  hasBusinessAccess,
+  logout 
+} = useDualAuth()
+
+// State
+const mobileMenuOpen = ref(false)
+const userMenuOpen = ref(false)
+const isBusinessMode = ref(false)
+
+// Consumer navigation items
+const consumerNavItems = [
+  { name: 'Home', path: '/home', icon: 'home' },
+  { name: 'Browse', path: '/browse', icon: 'compass' },
+  { name: 'Search', path: '/search', icon: 'search' },
+  { name: 'Library', path: '/library', icon: 'heart' },
+  { name: 'Profile', path: '/profile', icon: 'user' }
+]
+
+// Business navigation items
+const businessNavItems = computed(() => {
+  const items = [
+    { name: 'Dashboard', path: '/dashboard', icon: 'chart-bar' },
+    { name: 'Catalog', path: '/catalog', icon: 'music' },
+    { name: 'Ingestion', path: '/ingestion', icon: 'inbox' },
+    { name: 'Distributors', path: '/distributors', icon: 'building' },
+    { name: 'Analytics', path: '/analytics', icon: 'chart-line' },
+    { name: 'Settings', path: '/settings', icon: 'cog' }
+  ]
+  
+  // Add admin-only links
+  if (isAdmin.value) {
+    items.push({ name: 'Users', path: '/admin/users', icon: 'users' })
+  }
+  
+  return items
+})
+
+// Computed
+const navigationItems = computed(() => {
+  if (!isAuthenticated.value) return []
+  return isBusinessMode.value ? businessNavItems.value : consumerNavItems
+})
+
+const userInitials = computed(() => {
+  if (!userProfile.value) return 'U'
+  const name = userProfile.value.displayName || userProfile.value.organizationName || ''
+  return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || 'U'
+})
+
+// Methods
+const detectCurrentMode = () => {
+  // Admin users should default to business mode
+  if (isAdmin.value && !route.path.startsWith('/home') && !route.path.startsWith('/browse')) {
+    isBusinessMode.value = true
+    return
+  }
+  
+  // Detect based on current route
+  const businessPaths = ['/dashboard', '/catalog', '/ingestion', '/distributors', '/analytics', '/settings', '/testing', '/admin']
+  isBusinessMode.value = businessPaths.some(path => route.path.startsWith(path))
+}
+
+const toggleMode = () => {
+  isBusinessMode.value = !isBusinessMode.value
+  mobileMenuOpen.value = false
+  
+  // Navigate to appropriate home page
+  if (isBusinessMode.value) {
+    router.push('/dashboard')
+  } else {
+    router.push('/home')
+  }
+}
+
+const toggleMobileMenu = () => {
+  mobileMenuOpen.value = !mobileMenuOpen.value
+  userMenuOpen.value = false
+}
+
+const toggleUserMenu = () => {
+  userMenuOpen.value = !userMenuOpen.value
+}
+
+const goToSearch = () => {
+  router.push('/search')
+}
+
+const handleLogin = () => {
+  router.push('/login')
+  mobileMenuOpen.value = false
+}
+
+const handleSignup = () => {
+  router.push('/signup')
+  mobileMenuOpen.value = false
+}
+
+const handleLogout = async () => {
+  try {
+    await logout()
+    router.push('/')
+    mobileMenuOpen.value = false
+    userMenuOpen.value = false
+  } catch (error) {
+    console.error('Logout error:', error)
+  }
+}
+
+const isActiveRoute = (path) => {
+  // Check for exact match first
+  if (route.path === path) return true
+  
+  // Special cases for nested routes
+  if (path === '/browse' && route.path.startsWith('/browse')) return true
+  if (path === '/catalog' && route.path.startsWith('/catalog')) return true
+  if (path === '/ingestion' && route.path.startsWith('/ingestion')) return true
+  if (path === '/profile' && route.path.startsWith('/profile')) return true
+  if (path === '/admin/users' && route.path.startsWith('/admin')) return true
+  
+  return false
+}
+
+// Click outside handler for user menu
+const handleClickOutside = (event) => {
+  const userMenuEl = document.querySelector('.user-menu')
+  if (userMenuEl && !userMenuEl.contains(event.target)) {
+    userMenuOpen.value = false
+  }
+}
+
+// Watch for user type changes (e.g., when admin logs in)
+watch(userType, (newType) => {
+  if (newType === 'admin' && route.path === '/') {
+    isBusinessMode.value = true
+    router.push('/dashboard')
+  }
+})
+
+// Watch for route changes
+watch(route, detectCurrentMode)
+
+// Lifecycle
+onMounted(() => {
+  detectCurrentMode()
+  
+  // Set business mode by default for admin users
+  if (isAdmin.value) {
+    isBusinessMode.value = true
+  }
+  
+  document.addEventListener('click', handleClickOutside)
+})
+</script>
+
 <template>
   <nav class="navbar">
     <div class="container">
@@ -184,187 +360,6 @@
     </transition>
   </nav>
 </template>
-
-<script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
-import { useAuth } from '../composables/useAuth'
-
-const props = defineProps({
-  currentTheme: {
-    type: String,
-    default: 'light'
-  }
-})
-
-const emit = defineEmits(['toggle-theme'])
-
-const router = useRouter()
-const route = useRoute()
-const { isAuthenticated, userProfile, logout, user } = useAuth()
-
-// State
-const mobileMenuOpen = ref(false)
-const userMenuOpen = ref(false)
-const isBusinessMode = ref(false)
-const hasBusinessAccess = ref(false)
-
-// Consumer navigation items
-const consumerNavItems = [
-  { name: 'Home', path: '/home', icon: 'home' },
-  { name: 'Browse', path: '/browse', icon: 'compass' },
-  { name: 'Search', path: '/search', icon: 'search' },
-  { name: 'Library', path: '/library', icon: 'heart' },
-  { name: 'Profile', path: '/profile', icon: 'user' }
-]
-
-// Business navigation items
-const businessNavItems = computed(() => {
-  const items = [
-    { name: 'Dashboard', path: '/dashboard', icon: 'chart-bar' },
-    { name: 'Catalog', path: '/catalog', icon: 'music' },
-    { name: 'Ingestion', path: '/ingestion', icon: 'inbox' },
-    { name: 'Distributors', path: '/distributors', icon: 'building' },
-    { name: 'Settings', path: '/settings', icon: 'cog' }
-  ];
-  
-  // Add admin link if user is admin
-  if (userProfile.value?.role === 'admin') {
-    items.push({ name: 'Users', path: '/admin/users', icon: 'users' });
-  }
-  
-  return items;
-});
-
-// Computed
-const navigationItems = computed(() => {
-  if (!isAuthenticated.value) {
-    return []
-  }
-  
-  return isBusinessMode.value ? businessNavItems : consumerNavItems
-})
-
-const userInitials = computed(() => {
-  if (!userProfile.value) return 'U'
-  const name = userProfile.value.displayName || userProfile.value.organizationName || ''
-  return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || 'U'
-})
-
-// Methods
-const checkBusinessAccess = async () => {
-  if (!user.value) {
-    hasBusinessAccess.value = false
-    return
-  }
-  
-  try {
-    // Check if user has business access (you can implement your own logic)
-    // Method 1: Check custom claims
-    const idTokenResult = await user.value.getIdTokenResult()
-    hasBusinessAccess.value = !!(idTokenResult.claims.businessAccess || idTokenResult.claims.admin)
-    
-    // Method 2: Check localStorage/sessionStorage
-    // hasBusinessAccess.value = localStorage.getItem('userType') === 'business'
-    
-    // Method 3: Check user profile
-    // hasBusinessAccess.value = userProfile.value?.role === 'business' || userProfile.value?.role === 'admin'
-    
-    // For development, you might want to enable it for all authenticated users
-    hasBusinessAccess.value = true // Remove this line in production
-  } catch (error) {
-    console.error('Error checking business access:', error)
-    hasBusinessAccess.value = false
-  }
-}
-
-const detectCurrentMode = () => {
-  // Detect if we're in business section based on current route
-  const businessPaths = ['/dashboard', '/catalog', '/ingestion', '/distributors', '/settings', '/testing']
-  isBusinessMode.value = businessPaths.some(path => route.path.startsWith(path))
-}
-
-const toggleMode = () => {
-  isBusinessMode.value = !isBusinessMode.value
-  mobileMenuOpen.value = false
-  
-  // Navigate to the appropriate home page
-  if (isBusinessMode.value) {
-    router.push('/dashboard')
-  } else {
-    router.push('/home')
-  }
-}
-
-const toggleMobileMenu = () => {
-  mobileMenuOpen.value = !mobileMenuOpen.value
-  userMenuOpen.value = false
-}
-
-const toggleUserMenu = () => {
-  userMenuOpen.value = !userMenuOpen.value
-}
-
-const goToSearch = () => {
-  router.push('/search')
-}
-
-const handleLogin = () => {
-  router.push('/login')
-  mobileMenuOpen.value = false
-}
-
-const handleSignup = () => {
-  router.push('/signup')
-  mobileMenuOpen.value = false
-}
-
-const handleLogout = async () => {
-  try {
-    await logout()
-    router.push('/')
-    mobileMenuOpen.value = false
-    userMenuOpen.value = false
-  } catch (error) {
-    console.error('Logout error:', error)
-  }
-}
-
-const isActiveRoute = (path) => {
-  // Check for exact match first
-  if (route.path === path) return true
-  
-  // Special cases for nested routes
-  if (path === '/browse' && route.path.startsWith('/browse')) return true
-  if (path === '/ingestion' && route.path.startsWith('/ingestion')) return true
-  if (path === '/profile' && route.path.startsWith('/profile')) return true
-  
-  return false
-}
-
-// Click outside handler for user menu
-const handleClickOutside = (event) => {
-  const userMenuEl = document.querySelector('.user-menu')
-  if (userMenuEl && !userMenuEl.contains(event.target)) {
-    userMenuOpen.value = false
-  }
-}
-
-// Lifecycle
-onMounted(() => {
-  detectCurrentMode()
-  checkBusinessAccess()
-  document.addEventListener('click', handleClickOutside)
-})
-
-onUnmounted(() => {
-  document.removeEventListener('click', handleClickOutside)
-})
-
-// Watch for route changes
-route && detectCurrentMode()
-user && checkBusinessAccess()
-</script>
 
 <style scoped>
 .navbar {
