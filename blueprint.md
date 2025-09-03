@@ -239,6 +239,7 @@ stardust-dsp/
 │   │   ├── router/               # Vue Router
 │   │   │   └── index.js          # Route definitions ✅
 │   │   ├── services/             # API services
+│   │   │   ├── adminService.js   # Admin services ✅
 │   │   │   ├── analytics.js      # Analytics & reporting service ✅
 │   │   │   └── streaming.js      # Streaming service ✅
 │   │   ├── views/                # Page views
@@ -250,7 +251,8 @@ stardust-dsp/
 │   │   │   │   ├── Ingestion.vue     # Ingestion monitoring ✅
 │   │   │   │   ├── IngestionDetail.vue  # Delivery details ✅
 │   │   │   │   ├── Settings.vue      # Account configuration ✅
-│   │   │   │   └── Testing.vue       # Testing Suite ✅
+│   │   │   │   ├── Testing.vue       # Testing Suite ✅
+│   │   │   │   └── UserAdmin.vue     # User admin panel ✅
 │   │   │   ├── consumer/
 │   │   │   │   ├── Artist.vue        # Artist profile pages ✅
 │   │   │   │   ├── Browser.vue       # Music discovery interface ✅
@@ -290,15 +292,18 @@ stardust-dsp/
 📝 = File partially created or needs implementation
 
 ### **Summary of Current Status:**
-- **Core App (template/)**: 65% complete - All Phase 3 features complete
-- **CLI Tool**: ✅ 100% complete - All commands created and functional
-- **Services**: 25% complete - Streaming service implemented
-- **Components**: 15% complete - NavBar and FullPlayer created
-- **Composables**: ✅ 100% complete - All composables implemented (useAuth, useDualAuth, useCatalog, usePlayer, useLibrary)
-- **Views**: 79% complete - 11 of 14 views created (including all Phase 3 views)
-- **Functions**: ✅ 100% complete - All ingestion Cloud Functions deployed and working
-- **Documentation**: 5% complete - blueprint exists
+- **Core App (template/)**: 95% complete - Phases 1-6 fully complete, Phase 7 in progress
+- **CLI Tool**: ✅ 100% complete - All commands created and functional (create, init, deploy, configure, dev, deliveries)
+- **Services**: ✅ 100% complete - All services implemented (streaming, catalog, library, social, profile, analytics, reporting)
+- **Components**: ✅ 100% complete - All components created (NavBar, FullPlayer, MiniPlayer, browsing/discovery components, analytics visualizations)
+- **Composables**: ✅ 100% complete - All composables implemented (useAuth, useDualAuth, useCatalog, usePlayer, useLibrary, useSocial, useProfile, useDebounce, useAnalytics)
+- **Views**: ✅ 100% complete - All 18+ views created (including consumer views: Home, Browse, Search, Library, Profile, PlaylistDetail, Artist, Analytics)
+- **Functions**: ✅ 100% complete - All Cloud Functions deployed (ingestion pipeline, reporting suite, usage tracking, DSR generation, royalty calculations)
+- **Documentation**: 85% complete - Complete technical docs (DDEX.md, API reference, guides), blueprint exists, npm publication pending
 - **Testing**: ✅ 100% complete - Comprehensive testing suite with 20+ automated tests across system, ingestion, catalog, and performance categories
+- **Ingestion Pipeline**: ✅ 100% complete - Direct pipeline with ERN parsing, validation, asset processing, acknowledgments
+- **Consumer Features**: ✅ 100% complete - Playlist management, favorites, profiles, social features, recommendations, personalized home
+- **Analytics & Reporting**: ✅ 100% complete - Real-time tracking, DSR generation, usage reports, royalty calculations, distributor portal
 
 ## Core Features
 
@@ -666,6 +671,76 @@ class DSRGenerator {
   }
 }
 ```
+
+## User Role System
+
+The platform implements a hierarchical role-based access control (RBAC) system with four primary user types:
+
+### User Roles
+
+1. **Consumer** (`role: 'consumer'`)
+   - Default role for new users signing up through the consumer flow
+   - Access to music streaming features
+   - Can create playlists, follow artists, and access library
+   - No access to business/industry features
+
+2. **Label** (`role: 'label'`)
+   - Music label or independent artist accounts
+   - Access to catalog management
+   - Can create and manage releases
+   - Access to delivery and distribution features
+   - Monthly delivery limits apply
+
+3. **Distributor** (`role: 'distributor'`)
+   - Distribution service providers
+   - Higher delivery limits than labels
+   - Access to multi-tenant features
+   - Can manage multiple label accounts
+
+4. **Admin** (`role: 'admin'`)
+   - Full system access
+   - User management capabilities
+   - Can change user roles
+   - Access to all business and consumer features
+   - System configuration privileges
+
+### Role Storage
+
+User roles are stored in the Firestore `users` collection under the `role` field. The role determines:
+- UI navigation (Consumer vs Business modes)
+- Feature access
+- API permissions
+- Delivery limits
+- Storage quotas
+
+### Role Checking
+
+Roles can be checked in three ways:
+
+1. **Firestore Document**: Primary source of truth
+   ```javascript
+   userProfile.value?.role === 'admin'
+   ```
+
+2. **Custom Claims**: For Firebase Auth integration
+   ```javascript
+   const idTokenResult = await user.getIdTokenResult()
+   idTokenResult.claims.businessAccess
+   ```
+
+3. **Computed Properties**: In composables
+   ```javascript
+   const isAdmin = computed(() => userProfile.value?.role === 'admin')
+   const isBusinessUser = computed(() => 
+     ['label', 'distributor', 'admin'].includes(userProfile.value?.role)
+   )
+   ```
+
+### Migration Notes
+
+- Legacy systems may use `userType` instead of `role`
+- The system supports both for backwards compatibility
+- New implementations should use `role` exclusively
 
 ## Ingestion Architecture Deep Dive
 
