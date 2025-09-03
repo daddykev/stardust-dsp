@@ -325,7 +325,7 @@ stardust-dsp/
 
 We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-## 🔗 Stardust Ecosystem
+## 🪐 Stardust Ecosystem
 
 Stardust DSP is part of the larger Stardust ecosystem:
 
@@ -344,9 +344,9 @@ All tools share unified authentication for seamless workflow integration.
 - **Processing Efficiency**: 30-50% faster than pub/sub ✅
 
 ### Scalability Targets
-- **Catalog Size**: 1M+ tracks supported
-- **Concurrent Users**: 10K+ simultaneous streams
-- **Uptime**: 99.9% availability
+- **Catalog Size**: 10M+ tracks supported
+- **Concurrent Users**: 1M+ simultaneous streams
+- **Uptime**: 99.95% availability
 
 ## 🔐 Security
 

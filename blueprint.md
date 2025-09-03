@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Stardust DSP is an open-source, npm-installable Digital Service Provider (streaming platform) that receives DDEX ERN deliveries, processes them into a searchable catalog, and provides a complete music streaming experience. Part of the Stardust Ecosystem alongside DDEX Workbench and Stardust Distro.
+Stardust DSP is an open-source, npm-installable Digital Service Provider (streaming platform) that receives DDEX ERN deliveries, processes them into a searchable catalog, and provides a complete music streaming experience. Part of the Stardust Ecosystem alongside Stardust Distro and DDEX Workbench.
 
 ### Vision
 Enable anyone to launch a DDEX-compliant streaming service in minutes, from testing environments for labels to fully-featured platforms for emerging markets.
@@ -11,7 +11,7 @@ Enable anyone to launch a DDEX-compliant streaming service in minutes, from test
 - **Instant Streaming Platform**: Deploy a functional DSP with one command
 - **DDEX-Native Ingestion**: Built to receive and process ERN deliveries seamlessly
 - **Complete Streaming Stack**: Catalog, search, playback, and user management included
-- **Test Environment Ready**: Perfect for labels to test their Stardust Distro deployments
+- **Test Environment Ready**: Perfect for distributors to test their DDEX deliveries
 - **White-Label Capable**: Fully customizable for any brand or market
 
 ### Official App Build
@@ -151,7 +151,7 @@ validating → processing_releases → completed (or failed/cancelled)
 ## Technical Documentation
 
 For detailed technical specifications, see:
-- **DDEX Standards**: [`src/docs/DDEX.md`](../main/template/src/docs/DDEX.md) - Complete DDEX implementation standards
+- **DDEX Standards**: [`docs/DDEX.md`](../main/template/docs/DDEX.md) - Complete DDEX implementation standards
 
 ## Project Structure
 
@@ -1669,31 +1669,13 @@ interface SubscriptionPlans {
 
 ## Success Metrics
 
-### Platform Metrics (Year 1)
-- **Deployments**: 1,000+ active DSPs
-- **Catalog Size**: 1M+ tracks ingested
-- **User Base**: 100K+ active listeners
-- **Uptime**: 99.9% availability
-
 ### Performance Targets
 - **Ingestion Speed**: <2 min for standard album
 - **Search Latency**: <50ms response time
 - **Stream Start**: <500ms buffering
 - **Page Load**: <2s initial load
 
-### Ecosystem Integration
-- **Distro Integration**: 80% using DDEX Distro
-- **Workbench Validation**: 100% of ingestions
-- **Cross-Platform**: 60% using multiple tools
-
 ## Future Enhancements
-
-### Advanced Features (v2.0)
-1. **AI-Powered Discovery**: ML-based recommendations
-2. **Live Streaming**: Radio and live events
-3. **Podcast Platform**: Full podcast support
-4. **Artist Direct**: Direct artist uploads
-5. **Blockchain Rights**: Decentralized licensing
 
 ### Platform Extensions
 1. **Mobile SDKs**: iOS/Android native apps
@@ -1703,11 +1685,9 @@ interface SubscriptionPlans {
 5. **Wearables**: Watch apps
 
 ### B2B Features
-1. **White-Label API**: Full platform-as-a-service
-2. **Analytics API**: Deep usage insights
-3. **Advertising Platform**: Self-serve ad system
-4. **Content Management**: Label/artist portal
-5. **Revenue Sharing**: Automated royalty distribution
+1. **Analytics API**: Deep usage insights
+2. **Advertising Platform**: Self-serve ad system
+3. **Content Management**: Label/artist portal
 
 ## Technical Considerations
 
