@@ -477,6 +477,7 @@ onMounted(() => {
 }
 
 .mode-label {
+  font-size: 0.7rem;
   display: none;
 }
 
