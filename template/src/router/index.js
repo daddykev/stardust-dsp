@@ -183,6 +183,12 @@ const router = createRouter({
       component: () => import('../views/business/Testing.vue'),
       meta: { requiresAuth: true, requiresBusinessAccess: true }
     },
+    {
+      path: '/admin/users',
+      name: 'userAdmin',
+      component: () => import('../views/business/UserAdmin.vue'),
+      meta: { requiresAuth: true, requiresAdmin: true }
+    },    
 
     // Business management routes
     {

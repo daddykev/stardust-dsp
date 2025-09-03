@@ -219,13 +219,22 @@ const consumerNavItems = [
 ]
 
 // Business navigation items
-const businessNavItems = [
-  { name: 'Dashboard', path: '/dashboard', icon: 'chart-bar' },
-  { name: 'Catalog', path: '/catalog', icon: 'music' },
-  { name: 'Ingestion', path: '/ingestion', icon: 'inbox' },
-  { name: 'Distributors', path: '/distributors', icon: 'building' },
-  { name: 'Settings', path: '/settings', icon: 'cog' }
-]
+const businessNavItems = computed(() => {
+  const items = [
+    { name: 'Dashboard', path: '/dashboard', icon: 'chart-bar' },
+    { name: 'Catalog', path: '/catalog', icon: 'music' },
+    { name: 'Ingestion', path: '/ingestion', icon: 'inbox' },
+    { name: 'Distributors', path: '/distributors', icon: 'building' },
+    { name: 'Settings', path: '/settings', icon: 'cog' }
+  ];
+  
+  // Add admin link if user is admin
+  if (userProfile.value?.role === 'admin') {
+    items.push({ name: 'Users', path: '/admin/users', icon: 'users' });
+  }
+  
+  return items;
+});
 
 // Computed
 const navigationItems = computed(() => {
