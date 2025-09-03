@@ -1012,7 +1012,6 @@ onMounted(() => {
   color: var(--color-text-secondary);
   overflow: hidden;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
 }
 
@@ -1558,7 +1557,6 @@ onMounted(() => {
   color: var(--color-text-tertiary);
   overflow: hidden;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   margin-bottom: var(--space-md);
 }
@@ -1617,7 +1615,6 @@ onMounted(() => {
   color: var(--color-text-secondary);
   overflow: hidden;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
 }
 
