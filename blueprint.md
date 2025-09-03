@@ -161,31 +161,31 @@ stardust-dsp/
 │   │   ├── ingestion-guide.md    # ERN ingestion ❌
 │   │   └── streaming-setup.md    # Streaming config ❌
 │   ├── functions/                # Cloud Functions
+│   │   ├── admin/                # Admin operations
+│   │   │   ├── deliveries.js     # Manage deliveries ❌
+│   │   │   ├── moderation.js     # Content moderation ❌
+│   │   │   └── analytics.js      # Platform analytics ❌
+│   │   ├── catalog/              # Catalog operations
+│   │   │   ├── releases.js       # Release management ❌
+│   │   │   ├── tracks.js         # Track operations ❌
+│   │   │   ├── artists.js        # Artist profiles ❌
+│   │   │   └── search.js         # Search indexing ❌
 │   │   ├── ingestion/            # ERN processing
 │   │   │   ├── receiver.js       # Receive deliveries ✅
 │   │   │   ├── parser.js         # Parse ERN XML ✅
 │   │   │   ├── validator.js      # Validate via Workbench ✅
 │   │   │   ├── processor.js      # Process release ✅
 │   │   │   └── notifier.js       # Send confirmations ✅
-│   │   ├── catalog/              # Catalog operations
-│   │   │   ├── releases.js       # Release management ❌
-│   │   │   ├── tracks.js         # Track operations ❌
-│   │   │   ├── artists.js        # Artist profiles ❌
-│   │   │   └── search.js         # Search indexing ❌
+│   │   ├── reporting/            # DSR generation
+│   │   │   ├── usage.js          # Track usage ✅
+│   │   │   ├── dsr.js            # Generate DSR ✅
+│   │   │   ├── royalties.js      # Calculate royalties ✅
+│   │   │   └── delivery.js       # Send reports ✅
 │   │   ├── streaming/            # Streaming operations
 │   │   │   ├── auth.js           # Stream authorization ❌
 │   │   │   ├── delivery.js       # Content delivery ❌
 │   │   │   ├── transcoding.js    # Audio processing ❌
 │   │   │   └── analytics.js      # Play tracking ❌
-│   │   ├── reporting/            # DSR generation
-│   │   │   ├── usage.js          # Track usage ❌
-│   │   │   ├── dsr.js            # Generate DSR ❌
-│   │   │   └── delivery.js       # Send reports ❌
-│   │   ├── admin/                # Admin operations
-│   │   │   ├── deliveries.js     # Manage deliveries ❌
-│   │   │   ├── moderation.js     # Content moderation ❌
-│   │   │   └── analytics.js      # Platform analytics ❌
-│   │   ├── utils/                # Utilities
 │   │   ├── index.js              # Function exports ✅
 │   │   └── package.json          # Dependencies ✅
 │   ├── public/                   # Static assets ✅
@@ -197,20 +197,26 @@ stardust-dsp/
 │   │   │   ├── themes.css        # CSS custom properties, light/dark themes ✅
 │   │   │   └── components.css    # Reusable component & utility classes ✅
 │   │   ├── components/           # UI components
+│   │   │   ├── analytics/        # Analytics & reporting components
+│   │   │   │   ├── AnalyticsDashboard.vue  # Real-time analytics dashboard ✅
+│   │   │   │   ├── DSRGenerator.vue        # Digital Sales Report generator ✅
+│   │   │   │   ├── RoyaltyCalculator.vue   # Royalty calculation interface ✅
+│   │   │   │   ├── UsageReports.vue        # Usage reporting dashboard ✅
+│   │   │   │   └── DistributorPortal.vue   # Distributor reporting portal ✅
 │   │   │   ├── browse/           # Browse & discovery
-│   │   │   │   ├── AlbumCarousel.vue  # Scrollable carousel of album covers ✅
-│   │   │   │   ├── AlbumGrid.vue  # Grid layout of album covers ✅
-│   │   │   │   ├── ArtistCarousel.vue # Scrollable carousel of artist profiles ✅
-│   │   │   │   ├── ArtistGrid.vue  # Grid layout of artist profiles ✅
-│   │   │   │   ├── PlaylistGrid.vue  # User and curated playlists ✅
-│   │   │   │   └── TrackList.vue  # Track listing ✅
+│   │   │   │   ├── AlbumCarousel.vue       # Scrollable carousel of album covers ✅
+│   │   │   │   ├── AlbumGrid.vue           # Grid layout of album covers ✅
+│   │   │   │   ├── ArtistCarousel.vue      # Scrollable carousel of artist profiles ✅
+│   │   │   │   ├── ArtistGrid.vue          # Grid layout of artist profiles ✅
+│   │   │   │   ├── PlaylistGrid.vue        # User and curated playlists ✅
+│   │   │   │   └── TrackList.vue           # Track listing ✅
 │   │   │   ├── library/          # User library
 │   │   │   │   └── PlaylistCard.vue  # A single playlist card ✅
 │   │   │   ├── player/           # Music player
 │   │   │   │   └── FullPlayer.vue  # Full player view ✅
 │   │   │   ├── profile/          # 
-│   │   │   │   ├── ActivityFeed.vue  # Chronological feed of user activities ✅
-│   │   │   │   ├── EditProfileModal.vue  # Modal to edit user profile ✅
+│   │   │   │   ├── ActivityFeed.vue        # Chronological feed of user activities ✅
+│   │   │   │   ├── EditProfileModal.vue    # Modal to edit user profile ✅
 │   │   │   │   ├── RecentlyPlayedList.vue  # Recently played tracks with timestamps ✅
 │   │   │   │   └── UserList.vue  # A list of users for following ✅
 │   │   │   └── NavBar.vue        # Main nav component ✅
@@ -221,14 +227,17 @@ stardust-dsp/
 │   │   │   ├── useDualAuth.js    # Dual auth model ✅
 │   │   │   ├── useLibrary.js     # Library management ✅
 │   │   │   ├── usePlayer.js      # Audio playback ✅
+│   │   │   ├── usePlayTracking.js  # Play tracking for analytics ✅
 │   │   │   ├── useProfile.js     # Manages user profile data ✅
 │   │   │   └── useSocial.js      # Handles social features ✅
 │   │   ├── router/               # Vue Router
 │   │   │   └── index.js          # Route definitions ✅
 │   │   ├── services/             # API services
+│   │   │   ├── analytics.js      # Analytics & reporting service ✅
 │   │   │   └── streaming.js      # Streaming service ✅
 │   │   ├── views/                # Page views
 │   │   │   ├── business/
+│   │   │   │   ├── Analytics.vue     # Analytics and reporting hub ✅
 │   │   │   │   ├── Catalog.vue       # Browse catalog ✅
 │   │   │   │   ├── Dashboard.vue     # User dashboard ✅
 │   │   │   │   ├── Distributors.vue  # Distributor management ✅
