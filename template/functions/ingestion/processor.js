@@ -720,6 +720,15 @@ function extractTrackTitle(recording) {
 }
 
 function extractArtist(release) {
+  // ERN 4.x carries the display name directly. The artist reference
+  // beside it is a party id, so reading only that yields no name.
+  const displayArtistName =
+    release.DisplayArtistName || release.displayArtistName || release.DISPLAYARTISTNAME;
+  if (displayArtistName) {
+    if (typeof displayArtistName === 'string') return displayArtistName;
+    const nameText = displayArtistName._ || displayArtistName['#text'];
+    if (nameText) return nameText;
+  }
   // Handle uppercase variations from parser
   const displayArtist = release.DisplayArtist || 
                         release.displayArtist || 
@@ -770,6 +779,15 @@ function extractArtist(release) {
 }
 
 function extractRecordingArtist(recording) {
+  // ERN 4.x carries the display name directly. The artist reference
+  // beside it is a party id, so reading only that yields no name.
+  const displayArtistName =
+    recording.DisplayArtistName || recording.displayArtistName || recording.DISPLAYARTISTNAME;
+  if (displayArtistName) {
+    if (typeof displayArtistName === 'string') return displayArtistName;
+    const nameText = displayArtistName._ || displayArtistName['#text'];
+    if (nameText) return nameText;
+  }
   // Handle uppercase variations from parser
   const displayArtist = recording.DisplayArtist || 
                         recording.displayArtist || 
@@ -1045,4 +1063,4 @@ function parseDuration(duration) {
 }
 
 // Export the direct function
-module.exports = { processReleases };
+module.exports = { processReleases, extractArtist, extractRecordingArtist };
