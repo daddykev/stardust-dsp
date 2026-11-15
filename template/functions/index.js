@@ -8,6 +8,7 @@ const {onRequest} = require("firebase-functions/v2/https");
 const {onSchedule} = require("firebase-functions/v2/scheduler");
 const logger = require("firebase-functions/logger");
 const crypto = require('crypto');
+const { declaredMd5, fileFromResource, md5Status } = require('./ingestion/hash');
 
 // Initialize Firebase Admin once
 const admin = require("firebase-admin");
@@ -454,15 +455,7 @@ async function transferDeliveryFiles(deliveryId) {
         let originalFileName = null;
         
         if (soundRecording && Object.keys(soundRecording).length > 0) {
-          const technicalDetails = soundRecording.TechnicalDetails || 
-                                 soundRecording.TECHNICALDETAILS || 
-                                 soundRecording.technicalDetails || 
-                                 {};
-          
-          const file = technicalDetails.File || 
-                      technicalDetails.FILE || 
-                      technicalDetails.file || 
-                      {};
+          const file = fileFromResource(soundRecording) || {};
           
           // Get DDEX filename from ERN
           originalFileName = file.FileName || 
@@ -472,29 +465,7 @@ async function transferDeliveryFiles(deliveryId) {
           console.log(`Original filename from ERN: ${originalFileName}`);
           
           // Get MD5 hash
-          const hashSum = file.HashSum || 
-                        file.HASHSUM || 
-                        file.hashSum || 
-                        {};
-
-          if (hashSum) {
-            const hashType = hashSum.HashSumAlgorithmType || 
-                            hashSum.HASHSUMALGORITHMTYPE || 
-                            hashSum.hashSumAlgorithmType;
-            
-            let hashValue = hashSum.HashSum || 
-                          hashSum.HASHSUM || 
-                          hashSum.hashSum;
-            
-            // Handle case where HashSum might be an object
-            if (typeof hashValue === 'object' && hashValue !== null) {
-              hashValue = hashValue._ || hashValue['#text'] || hashValue.value;
-            }
-            
-            if (hashType === 'MD5' && hashValue) {
-              expectedMD5 = hashValue.toLowerCase().trim();
-            }
-          }
+          expectedMD5 = declaredMd5(file);
         }
         
         // Generate DDEX-compliant filename
@@ -630,15 +601,7 @@ async function transferDeliveryFiles(deliveryId) {
         let originalFileName = null;
         
         if (image && Object.keys(image).length > 0) {
-          const technicalDetails = image.TechnicalDetails || 
-                                 image.TECHNICALDETAILS || 
-                                 image.technicalDetails || 
-                                 {};
-          
-          const file = technicalDetails.File || 
-                      technicalDetails.FILE || 
-                      technicalDetails.file || 
-                      {};
+          const file = fileFromResource(image) || {};
           
           // Get DDEX filename from ERN
           originalFileName = file.FileName || 
@@ -648,29 +611,7 @@ async function transferDeliveryFiles(deliveryId) {
           console.log(`Original image filename from ERN: ${originalFileName}`);
           
           // Get MD5 hash
-          const hashSum = file.HashSum || 
-                         file.HASHSUM || 
-                         file.hashSum || 
-                         {};
-          
-          if (hashSum) {
-            const hashType = hashSum.HashSumAlgorithmType || 
-                            hashSum.HASHSUMALGORITHMTYPE || 
-                            hashSum.hashSumAlgorithmType;
-            
-            let hashValue = hashSum.HashSum || 
-                           hashSum.HASHSUM || 
-                           hashSum.hashSum;
-            
-            // Handle case where HashSum might be an object
-            if (typeof hashValue === 'object' && hashValue !== null) {
-              hashValue = hashValue._ || hashValue['#text'] || hashValue.value;
-            }
-            
-            if (hashType === 'MD5' && hashValue) {
-              expectedMD5 = hashValue.toLowerCase().trim();
-            }
-          }
+          expectedMD5 = declaredMd5(file);
         }
         
         // Generate DDEX-compliant filename for images
@@ -793,6 +734,7 @@ async function transferDeliveryFiles(deliveryId) {
     const audioFailures = transferredFiles.audio.filter(f => f.md5Valid === false);
     const imageFailures = transferredFiles.images.filter(f => f.md5Valid === false);
     const hasValidationWarnings = audioFailures.length > 0 || imageFailures.length > 0;
+    const validationStatus = md5Status([...transferredFiles.audio, ...transferredFiles.images]);
     
     // Update the delivery with transferred file information
     await admin.firestore()
@@ -803,7 +745,7 @@ async function transferDeliveryFiles(deliveryId) {
         'files.transferredAt': admin.firestore.FieldValue.serverTimestamp(),
         'files.audioCount': transferredFiles.audio.length,
         'files.imageCount': transferredFiles.images.length,
-        'files.md5ValidationStatus': hasValidationWarnings ? 'warnings' : 'passed',
+        'files.md5ValidationStatus': hasValidationWarnings ? 'warnings' : validationStatus,
         'files.md5Warnings': hasValidationWarnings ? {
           audio: audioFailures.map(f => f.fileName),
           images: imageFailures.map(f => f.fileName),
@@ -820,7 +762,7 @@ async function transferDeliveryFiles(deliveryId) {
         status: 'completed',
         completedAt: admin.firestore.FieldValue.serverTimestamp(),
         transferredFiles: transferredFiles,
-        md5ValidationStatus: hasValidationWarnings ? 'warnings' : 'passed',
+        md5ValidationStatus: hasValidationWarnings ? 'warnings' : validationStatus,
         summary: {
           audioTransferred: transferredFiles.audio.length,
           audioRequested: audioFiles.length,

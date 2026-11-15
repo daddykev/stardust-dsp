@@ -382,6 +382,7 @@ function extractReleases(ernData, ernVersion) {
     mappedRelease.REFERENCETITLE = release.ReferenceTitle || release.REFERENCETITLE;
     mappedRelease.DISPLAYTITLETEXT = release.DisplayTitleText || release.DISPLAYTITLETEXT;
     mappedRelease.DISPLAYARTIST = release.DisplayArtist || release.DISPLAYARTIST;
+    mappedRelease.DISPLAYARTISTNAME = release.DisplayArtistName || release.DISPLAYARTISTNAME;
     mappedRelease.RELEASERESOURCEREFERENCELIST = release.ReleaseResourceReferenceList || release.RELEASERESOURCEREFERENCELIST;
     mappedRelease.LABELNAME = release.LabelName || release.LABELNAME;
     mappedRelease.GENRE = release.Genre || release.GENRE;
